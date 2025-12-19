@@ -20,6 +20,7 @@ type Orchestrator struct {
 	subscribers map[string][]chan *models.Task
 	subMu       sync.RWMutex
 	maxParallel int
+	defaultMCPConfig string
 	wg          sync.WaitGroup
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -30,6 +31,7 @@ type Config struct {
 	StorePath   string
 	LogDir      string
 	MaxParallel int
+	DefaultMCPConfig string
 }
 
 // New creates a new Orchestrator.
@@ -49,6 +51,7 @@ func New(cfg Config) (*Orchestrator, error) {
 		store:       fileStore,
 		subscribers: make(map[string][]chan *models.Task),
 		maxParallel: cfg.MaxParallel,
+		defaultMCPConfig: cfg.DefaultMCPConfig,
 		ctx:         ctx,
 		cancel:      cancel,
 	}
@@ -146,6 +149,12 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 		timeout = models.Duration(dur)
 	}
 
+	// Apply orchestrator default MCP config when not explicitly provided.
+	mcpConfig := req.MCPConfig
+	if mcpConfig == "" {
+		mcpConfig = o.defaultMCPConfig
+	}
+
 	task := &models.Task{
 		ID:           generateID(),
 		Prompt:       req.Prompt,
@@ -156,7 +165,7 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 		Tags:         req.Tags,
 		Priority:     req.Priority,
 		Timeout:      timeout,
-		MCPConfig:    req.MCPConfig,
+		MCPConfig:    mcpConfig,
 		ExtraArgs:    req.ExtraArgs,
 		CreatedAt:    time.Now(),
 	}

@@ -33,9 +33,10 @@ type ServerConfig struct {
 
 // OrchestratorConfig holds orchestrator configuration.
 type OrchestratorConfig struct {
-	StorePath   string `json:"store_path" yaml:"store_path"`
-	LogDir      string `json:"log_dir" yaml:"log_dir"`
-	MaxParallel int    `json:"max_parallel" yaml:"max_parallel"`
+	StorePath         string `json:"store_path" yaml:"store_path"`
+	LogDir            string `json:"log_dir" yaml:"log_dir"`
+	MaxParallel       int    `json:"max_parallel" yaml:"max_parallel"`
+	DefaultMCPConfig  string `json:"default_mcp_config" yaml:"default_mcp_config"`
 }
 
 // DefaultConfig returns the default configuration.
@@ -115,6 +116,7 @@ func Load(path string) (*Config, error) {
 	// Expand home directory in paths
 	cfg.Orchestrator.StorePath = expandHome(cfg.Orchestrator.StorePath)
 	cfg.Orchestrator.LogDir = expandHome(cfg.Orchestrator.LogDir)
+	cfg.Orchestrator.DefaultMCPConfig = expandMCPConfig(cfg.Orchestrator.DefaultMCPConfig)
 
 	return cfg, nil
 }
@@ -170,4 +172,17 @@ func expandHome(path string) string {
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, path[1:])
+}
+
+// expandMCPConfig expands ~ in MCP config values.
+// It supports both "~/.path" and "@~/.path" forms.
+func expandMCPConfig(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return value
+	}
+	if strings.HasPrefix(value, "@~") {
+		return "@" + expandHome(value[1:])
+	}
+	return expandHome(value)
 }

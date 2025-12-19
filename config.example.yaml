@@ -52,3 +52,9 @@ orchestrator:
   store_path: "~/.mesnada/tasks.json"
   log_dir: "~/.mesnada/logs"
   max_parallel: 5
+
+  # Additional MCP config to pass to Copilot CLI for every spawned task.
+  # This is passed as: copilot --additional-mcp-config <value>
+  # Use @<path> to reference a JSON file relative to the task working directory.
+  # Example: @.github/mcp-config.json
+  default_mcp_config: "@.github/mcp-config.json"

@@ -68,6 +68,42 @@ func TestOrchestratorSpawn(t *testing.T) {
 	}
 }
 
+func TestOrchestratorDefaultMCPConfigApplied(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "mesnada-orch-test-default-mcp-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	defaultCfg := "@.github/mcp-config.json"
+	orch, err := New(Config{
+		StorePath:         filepath.Join(tmpDir, "tasks.json"),
+		LogDir:            filepath.Join(tmpDir, "logs"),
+		MaxParallel:       1,
+		DefaultMCPConfig:  defaultCfg,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create orchestrator: %v", err)
+	}
+	defer orch.Shutdown()
+
+	ctx := context.Background()
+
+	task, err := orch.Spawn(ctx, models.SpawnRequest{
+		Prompt:     "test",
+		WorkDir:    "/tmp",
+		Background: true,
+		// MCPConfig intentionally omitted
+	})
+	if err != nil {
+		t.Fatalf("Failed to spawn task: %v", err)
+	}
+
+	if task.MCPConfig != defaultCfg {
+		t.Fatalf("Expected MCPConfig to default to %q, got %q", defaultCfg, task.MCPConfig)
+	}
+}
+
 func TestOrchestratorListTasks(t *testing.T) {
 	orch, cleanup := setupTestOrchestrator(t)
 	defer cleanup()

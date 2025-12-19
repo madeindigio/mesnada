@@ -2,6 +2,15 @@
 
 mesnada is a MCP server implementation written in Go, designed to facilitate the orchestration of subagents in a distributed system using Github Copilot CLI `copilot` for command line. It provides a robust framework for managing communication between the main server and its subagents, ensuring efficient data exchange and coordination.
 
+## Cómo desarrollar
+
+1. Comprueba que el proyecto está indexado con las tools de code de Remembrances
+Si no lo está, indexa el código de este proyecto
+2. Activa la monitorización de código de Remembrances
+3. Usa la búsqueda híbrida y la búsqueda de código para localizar información relevante para la tarea
+4. Usa las tools de context7 para obtener contexto de cómo funciona una librería que necesites utilizar
+5. Usa las tools de búsqueda en internet con Google, Brave y Perplexity para obtener información adicional si es necesario
+
 ## Características principales
 
 ### Gestión de modelos

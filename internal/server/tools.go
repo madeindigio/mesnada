@@ -104,7 +104,10 @@ func (s *Server) getToolDefinitions() []Tool {
 				"properties": map[string]interface{}{
 					"status": map[string]interface{}{
 						"type":        "array",
-						"items":       map[string]string{"type": "string", "enum": "pending,running,completed,failed,cancelled"},
+						"items": map[string]interface{}{
+							"type": "string",
+							"enum": []string{"pending", "running", "completed", "failed", "cancelled"},
+						},
 						"description": "Filter by task status",
 					},
 					"tags": map[string]interface{}{

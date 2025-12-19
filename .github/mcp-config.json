@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "hyper-mcp": {
+      "type": "local",
+      "command": "hyper-mcp",
+      "args": [
+        "--config-file",
+        "/home/sevir/.config/hyper-mcp/assistant.yaml"
+      ],
+      "tools": ["*"]
+    },
+    "remembrances": {
+      "type": "local",
+      "command": "remembrances-mcp-beta",
+      "cwd": "/www/Veridas",
+      "args": [
+        "--config",
+        "./.ai/remembrances.config.yaml"
+      ],
+      "tools": ["*"]
+    },
+    "mesnada": {
+      "type": "http",
+      "url": "http://127.0.0.1:8765/mcp",
+      "tools": ["*"]
+    }
+  }
+}

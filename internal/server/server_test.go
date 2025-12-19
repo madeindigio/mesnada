@@ -147,15 +147,65 @@ func TestMCPToolsList(t *testing.T) {
 
 	// Check for expected tools
 	toolNames := make(map[string]bool)
+	var listTasksTool map[string]interface{}
 	for _, tool := range tools {
 		t := tool.(map[string]interface{})
-		toolNames[t["name"].(string)] = true
+		name := t["name"].(string)
+		toolNames[name] = true
+		if name == "list_tasks" {
+			listTasksTool = t
+		}
 	}
 
 	expectedTools := []string{"spawn_agent", "get_task", "list_tasks", "wait_task", "cancel_task", "get_stats"}
 	for _, name := range expectedTools {
 		if !toolNames[name] {
 			t.Errorf("Expected tool '%s' not found", name)
+		}
+	}
+
+	// Regression check: VS Code validates tool schemas strictly.
+	// Ensure list_tasks.status.items.enum is a JSON array (not a comma-separated string).
+	if listTasksTool == nil {
+		t.Fatal("Expected to find tool 'list_tasks'")
+	}
+
+	inputSchema, ok := listTasksTool["inputSchema"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected list_tasks.inputSchema to be an object, got %T", listTasksTool["inputSchema"])
+	}
+	properties, ok := inputSchema["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected list_tasks.inputSchema.properties to be an object, got %T", inputSchema["properties"])
+	}
+	statusProp, ok := properties["status"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected list_tasks.inputSchema.properties.status to be an object, got %T", properties["status"])
+	}
+	items, ok := statusProp["items"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected list_tasks.status.items to be an object, got %T", statusProp["items"])
+	}
+	if items["type"] != "string" {
+		t.Fatalf("Expected list_tasks.status.items.type to be 'string', got %v", items["type"])
+	}
+
+	enumVal, ok := items["enum"].([]interface{})
+	if !ok {
+		t.Fatalf("Expected list_tasks.status.items.enum to be an array, got %T (%v)", items["enum"], items["enum"])
+	}
+
+	expectedStatuses := map[string]bool{"pending": true, "running": true, "completed": true, "failed": true, "cancelled": true}
+	if len(enumVal) != len(expectedStatuses) {
+		t.Fatalf("Expected %d enum values, got %d", len(expectedStatuses), len(enumVal))
+	}
+	for _, v := range enumVal {
+		status, ok := v.(string)
+		if !ok {
+			t.Fatalf("Expected enum values to be strings, got %T", v)
+		}
+		if !expectedStatuses[status] {
+			t.Fatalf("Unexpected status enum value: %q", status)
 		}
 	}
 }

@@ -49,6 +49,11 @@ orchestrator:
   store_path: "~/.mesnada/tasks.json"
   log_dir: "~/.mesnada/logs"
   max_parallel: 5
+
+  # (Opcional) Config MCP adicional que se pasará a *todas* las instancias de Copilot CLI.
+  # Se traduce a: copilot --additional-mcp-config <valor>
+  # Si apuntas a un fichero, usa el prefijo @ (p.ej. @.github/mcp-config.json)
+  default_mcp_config: "@.github/mcp-config.json"
 ```
 
 Para crear una configuración inicial:
