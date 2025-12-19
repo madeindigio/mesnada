@@ -254,7 +254,17 @@ go build -o mesnada ./cmd/mesnada
 # Build con información de versión
 go build -ldflags "-X main.version=1.0.0 -X main.commit=$(git rev-parse --short HEAD)" -o mesnada ./cmd/mesnada
 ```
+## Tasks
 
+### build
+
+Compila el binario de mesnada.
+
+```bash
+# Get version from last git tag
+VERSION=$(git describe --tags --abbrev=0)
+go build -ldflags "-X main.version=$VERSION -X main.commit=$(git rev-parse --short HEAD)" -o mesnada ./cmd/mesnada
+```
 ## Licencia
 
 MIT
