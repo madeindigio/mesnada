@@ -75,6 +75,7 @@ func DefaultConfig() *Config {
 // Load loads configuration from a file (supports JSON and YAML).
 func Load(path string) (*Config, error) {
 	cfg := DefaultConfig()
+	baseDir := ""
 
 	if path == "" {
 		home, _ := os.UserHomeDir()
@@ -84,12 +85,16 @@ func Load(path string) (*Config, error) {
 
 		if _, err := os.Stat(yamlPath); err == nil {
 			path = yamlPath
+			baseDir = filepath.Dir(path)
 		} else if _, err := os.Stat(jsonPath); err == nil {
 			path = jsonPath
+			baseDir = filepath.Dir(path)
 		} else {
 			// No config file found, return defaults
 			return cfg, nil
 		}
+	} else {
+		baseDir = filepath.Dir(path)
 	}
 
 	data, err := os.ReadFile(path)
@@ -113,9 +118,11 @@ func Load(path string) (*Config, error) {
 		}
 	}
 
-	// Expand home directory in paths
-	cfg.Orchestrator.StorePath = expandHome(cfg.Orchestrator.StorePath)
-	cfg.Orchestrator.LogDir = expandHome(cfg.Orchestrator.LogDir)
+	// Expand/resolve paths from config file
+	// - StorePath/LogDir: expand ~ and resolve relative paths relative to the config file directory
+	// - DefaultMCPConfig: expand ~ (supports both "~/..." and "@~/...") but keep relative paths as-is
+	cfg.Orchestrator.StorePath = resolvePath(cfg.Orchestrator.StorePath, baseDir)
+	cfg.Orchestrator.LogDir = resolvePath(cfg.Orchestrator.LogDir, baseDir)
 	cfg.Orchestrator.DefaultMCPConfig = expandMCPConfig(cfg.Orchestrator.DefaultMCPConfig)
 
 	return cfg, nil
@@ -167,21 +174,49 @@ func (c *Config) ValidateModel(id string) bool {
 
 // expandHome expands ~ to home directory in paths.
 func expandHome(path string) string {
-	if !strings.HasPrefix(path, "~") {
+	path = strings.TrimSpace(path)
+	if path == "" {
 		return path
 	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, path[1:])
+	if path == "~" {
+		home, _ := os.UserHomeDir()
+		return home
+	}
+	// Support "~/..." (and Windows separators just in case)
+	if strings.HasPrefix(path, "~/") || strings.HasPrefix(path, "~\\") {
+		home, _ := os.UserHomeDir()
+		rest := path[2:]
+		return filepath.Join(home, rest)
+	}
+	// We intentionally don't expand "~user/..." forms.
+	return path
+}
+
+// resolvePath expands ~ and resolves relative paths against baseDir.
+// If baseDir is empty, relative paths are returned unchanged.
+func resolvePath(value, baseDir string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return value
+	}
+	p := expandHome(value)
+	if filepath.IsAbs(p) {
+		return p
+	}
+	if baseDir == "" {
+		return p
+	}
+	return filepath.Clean(filepath.Join(baseDir, p))
 }
 
 // expandMCPConfig expands ~ in MCP config values.
-// It supports both "~/.path" and "@~/.path" forms.
+// It supports both "~/..." and "@~/..." forms.
 func expandMCPConfig(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return value
 	}
-	if strings.HasPrefix(value, "@~") {
+	if strings.HasPrefix(value, "@") {
 		return "@" + expandHome(value[1:])
 	}
 	return expandHome(value)
