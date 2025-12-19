@@ -1,0 +1,11 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8765
+  },
+  "orchestrator": {
+    "store_path": "~/.mesnada/tasks.json",
+    "log_dir": "~/.mesnada/logs",
+    "max_parallel": 5
+  }
+}

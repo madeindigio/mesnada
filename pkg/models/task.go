@@ -1,0 +1,162 @@
+// Package models defines the core domain types for the mesnada orchestrator.
+package models
+
+import (
+	"time"
+)
+
+// TaskStatus represents the current state of a task.
+type TaskStatus string
+
+const (
+	TaskStatusPending   TaskStatus = "pending"
+	TaskStatusRunning   TaskStatus = "running"
+	TaskStatusCompleted TaskStatus = "completed"
+	TaskStatusFailed    TaskStatus = "failed"
+	TaskStatusCancelled TaskStatus = "cancelled"
+)
+
+// TaskProgress represents the progress of a task.
+type TaskProgress struct {
+	Percentage  int       `json:"percentage"`
+	Description string    `json:"description"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// Task represents a Copilot CLI agent task.
+type Task struct {
+	ID           string        `json:"id"`
+	Prompt       string        `json:"prompt"`
+	WorkDir      string        `json:"work_dir"`
+	Status       TaskStatus    `json:"status"`
+	PID          int           `json:"pid,omitempty"`
+	Output       string        `json:"output,omitempty"`
+	OutputTail   string        `json:"output_tail,omitempty"`
+	Error        string        `json:"error,omitempty"`
+	ExitCode     *int          `json:"exit_code,omitempty"`
+	Model        string        `json:"model,omitempty"`
+	LogFile      string        `json:"log_file,omitempty"`
+	Progress     *TaskProgress `json:"progress,omitempty"`
+	CreatedAt    time.Time     `json:"created_at"`
+	StartedAt    *time.Time    `json:"started_at,omitempty"`
+	CompletedAt  *time.Time    `json:"completed_at,omitempty"`
+	Dependencies []string      `json:"dependencies,omitempty"`
+	Tags         []string      `json:"tags,omitempty"`
+	Priority     int           `json:"priority,omitempty"`
+	Timeout      Duration      `json:"timeout,omitempty"`
+	MCPConfig    string        `json:"mcp_config,omitempty"`
+	ExtraArgs    []string      `json:"extra_args,omitempty"`
+}
+
+// Duration is a wrapper around time.Duration for JSON marshaling.
+type Duration time.Duration
+
+// MarshalJSON implements json.Marshaler.
+func (d Duration) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + time.Duration(d).String() + `"`), nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (d *Duration) UnmarshalJSON(b []byte) error {
+	if len(b) < 2 {
+		return nil
+	}
+	// Remove quotes
+	s := string(b[1 : len(b)-1])
+	if s == "" {
+		*d = 0
+		return nil
+	}
+	dur, err := time.ParseDuration(s)
+	if err != nil {
+		return err
+	}
+	*d = Duration(dur)
+	return nil
+}
+
+// IsTerminal returns true if the task is in a terminal state.
+func (t *Task) IsTerminal() bool {
+	return t.Status == TaskStatusCompleted ||
+		t.Status == TaskStatusFailed ||
+		t.Status == TaskStatusCancelled
+}
+
+// IsRunning returns true if the task is currently running.
+func (t *Task) IsRunning() bool {
+	return t.Status == TaskStatusRunning
+}
+
+// IsPending returns true if the task is pending execution.
+func (t *Task) IsPending() bool {
+	return t.Status == TaskStatusPending
+}
+
+// TaskSummary provides a condensed view of a task for listing.
+type TaskSummary struct {
+	ID          string     `json:"id"`
+	Prompt      string     `json:"prompt"`
+	WorkDir     string     `json:"work_dir"`
+	Status      TaskStatus `json:"status"`
+	CreatedAt   time.Time  `json:"created_at"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	Duration    string     `json:"duration,omitempty"`
+}
+
+// ToSummary converts a Task to a TaskSummary.
+func (t *Task) ToSummary() TaskSummary {
+	summary := TaskSummary{
+		ID:          t.ID,
+		Prompt:      truncateString(t.Prompt, 100),
+		WorkDir:     t.WorkDir,
+		Status:      t.Status,
+		CreatedAt:   t.CreatedAt,
+		CompletedAt: t.CompletedAt,
+	}
+	if t.CompletedAt != nil && t.StartedAt != nil {
+		summary.Duration = t.CompletedAt.Sub(*t.StartedAt).String()
+	}
+	return summary
+}
+
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
+}
+
+// SpawnRequest represents a request to spawn a new agent.
+type SpawnRequest struct {
+	Prompt       string   `json:"prompt"`
+	WorkDir      string   `json:"work_dir,omitempty"`
+	Model        string   `json:"model,omitempty"`
+	Dependencies []string `json:"dependencies,omitempty"`
+	Tags         []string `json:"tags,omitempty"`
+	Priority     int      `json:"priority,omitempty"`
+	Timeout      string   `json:"timeout,omitempty"`
+	MCPConfig    string   `json:"mcp_config,omitempty"`
+	ExtraArgs    []string `json:"extra_args,omitempty"`
+	Background   bool     `json:"background"`
+}
+
+// WaitRequest represents a request to wait for task completion.
+type WaitRequest struct {
+	TaskID  string `json:"task_id"`
+	Timeout string `json:"timeout,omitempty"`
+}
+
+// WaitMultipleRequest represents a request to wait for multiple tasks.
+type WaitMultipleRequest struct {
+	TaskIDs []string `json:"task_ids"`
+	WaitAll bool     `json:"wait_all"`
+	Timeout string   `json:"timeout,omitempty"`
+}
+
+// ListRequest represents a request to list tasks.
+type ListRequest struct {
+	Status []TaskStatus `json:"status,omitempty"`
+	Tags   []string     `json:"tags,omitempty"`
+	Limit  int          `json:"limit,omitempty"`
+	Offset int          `json:"offset,omitempty"`
+}

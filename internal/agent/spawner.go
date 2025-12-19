@@ -1,0 +1,349 @@
+// Package agent handles spawning and managing Copilot CLI processes.
+package agent
+
+import (
+	"bufio"
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/sevir/mesnada/pkg/models"
+)
+
+const (
+	defaultLogDir    = ".mesnada/logs"
+	outputTailLines  = 50
+	maxOutputCapture = 1024 * 1024 // 1MB max output capture
+)
+
+// Spawner manages Copilot CLI process spawning.
+type Spawner struct {
+	logDir     string
+	processes  map[string]*Process
+	mu         sync.RWMutex
+	onComplete func(task *models.Task)
+}
+
+// Process represents a running Copilot CLI process.
+type Process struct {
+	cmd     *exec.Cmd
+	task    *models.Task
+	output  *strings.Builder
+	logFile *os.File
+	cancel  context.CancelFunc
+	done    chan struct{}
+}
+
+// NewSpawner creates a new agent spawner.
+func NewSpawner(logDir string, onComplete func(task *models.Task)) *Spawner {
+	if logDir == "" {
+		home, _ := os.UserHomeDir()
+		logDir = filepath.Join(home, defaultLogDir)
+	}
+	os.MkdirAll(logDir, 0755)
+
+	return &Spawner{
+		logDir:     logDir,
+		processes:  make(map[string]*Process),
+		onComplete: onComplete,
+	}
+}
+
+// Spawn starts a new Copilot CLI agent.
+func (s *Spawner) Spawn(ctx context.Context, task *models.Task) error {
+	// Build command arguments
+	args := s.buildArgs(task)
+
+	// Create cancellable context
+	procCtx, cancel := context.WithCancel(ctx)
+	if task.Timeout > 0 {
+		procCtx, cancel = context.WithTimeout(ctx, time.Duration(task.Timeout))
+	}
+
+	// Create command
+	cmd := exec.CommandContext(procCtx, "copilot", args...)
+	cmd.Dir = task.WorkDir
+
+	// Set up environment
+	cmd.Env = append(os.Environ(),
+		"COPILOT_ALLOW_ALL=1",
+		"NO_COLOR=1",
+	)
+
+	// Create log file
+	logPath := filepath.Join(s.logDir, fmt.Sprintf("%s.log", task.ID))
+	logFile, err := os.Create(logPath)
+	if err != nil {
+		cancel()
+		return fmt.Errorf("failed to create log file: %w", err)
+	}
+	task.LogFile = logPath
+
+	// Set up output capture
+	output := &strings.Builder{}
+
+	// Set up stdin pipe to send the prompt
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		cancel()
+		logFile.Close()
+		return fmt.Errorf("failed to create stdin pipe: %w", err)
+	}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		cancel()
+		logFile.Close()
+		return fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		cancel()
+		logFile.Close()
+		return fmt.Errorf("failed to create stderr pipe: %w", err)
+	}
+
+	// Start process
+	if err := cmd.Start(); err != nil {
+		cancel()
+		logFile.Close()
+		return fmt.Errorf("failed to start copilot: %w", err)
+	}
+
+	// Send the prompt to stdin and close it
+	go func() {
+		defer stdin.Close()
+		stdin.Write([]byte(task.Prompt))
+	}()
+
+	task.PID = cmd.Process.Pid
+	now := time.Now()
+	task.StartedAt = &now
+	task.Status = models.TaskStatusRunning
+
+	proc := &Process{
+		cmd:     cmd,
+		task:    task,
+		output:  output,
+		logFile: logFile,
+		cancel:  cancel,
+		done:    make(chan struct{}),
+	}
+
+	s.mu.Lock()
+	s.processes[task.ID] = proc
+	s.mu.Unlock()
+
+	// Start output capture goroutines
+	go s.captureOutput(proc, stdout, stderr)
+
+	// Wait for completion in background
+	go s.waitForCompletion(proc)
+
+	return nil
+}
+
+func (s *Spawner) buildArgs(task *models.Task) []string {
+	// Prepend task_id to the prompt
+	promptWithTaskID := fmt.Sprintf("You are the task_id: %s\n\n%s", task.ID, task.Prompt)
+
+	args := []string{
+		"--allow-all-tools",
+		"--no-color",
+		"--no-custom-instructions",
+	}
+
+	if task.Model != "" {
+		args = append(args, "--model", task.Model)
+	}
+
+	if task.MCPConfig != "" {
+		args = append(args, "--additional-mcp-config", task.MCPConfig)
+	}
+
+	args = append(args, task.ExtraArgs...)
+
+	// Store the modified prompt for stdin
+	task.Prompt = promptWithTaskID
+
+	return args
+}
+
+func (s *Spawner) captureOutput(proc *Process, stdout, stderr io.ReadCloser) {
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	capture := func(r io.ReadCloser, prefix string) {
+		defer wg.Done()
+		scanner := bufio.NewScanner(r)
+		buf := make([]byte, 0, 64*1024)
+		scanner.Buffer(buf, 1024*1024)
+
+		for scanner.Scan() {
+			line := scanner.Text()
+
+			// Write to log file
+			fmt.Fprintf(proc.logFile, "%s%s\n", prefix, line)
+
+			// Capture to memory (with limit)
+			if proc.output.Len() < maxOutputCapture {
+				proc.output.WriteString(line)
+				proc.output.WriteString("\n")
+			}
+		}
+	}
+
+	go capture(stdout, "")
+	go capture(stderr, "[stderr] ")
+
+	wg.Wait()
+}
+
+func (s *Spawner) waitForCompletion(proc *Process) {
+	defer close(proc.done)
+	defer proc.logFile.Close()
+
+	err := proc.cmd.Wait()
+
+	now := time.Now()
+	proc.task.CompletedAt = &now
+	proc.task.Output = proc.output.String()
+	proc.task.OutputTail = s.getTail(proc.output.String(), outputTailLines)
+
+	if err != nil {
+		proc.task.Status = models.TaskStatusFailed
+		proc.task.Error = err.Error()
+
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			code := exitErr.ExitCode()
+			proc.task.ExitCode = &code
+		}
+	} else {
+		proc.task.Status = models.TaskStatusCompleted
+		code := 0
+		proc.task.ExitCode = &code
+	}
+
+	s.mu.Lock()
+	delete(s.processes, proc.task.ID)
+	s.mu.Unlock()
+
+	if s.onComplete != nil {
+		s.onComplete(proc.task)
+	}
+}
+
+func (s *Spawner) getTail(output string, lines int) string {
+	allLines := strings.Split(output, "\n")
+	if len(allLines) <= lines {
+		return output
+	}
+	return strings.Join(allLines[len(allLines)-lines:], "\n")
+}
+
+// Cancel stops a running agent.
+func (s *Spawner) Cancel(taskID string) error {
+	s.mu.RLock()
+	proc, exists := s.processes[taskID]
+	s.mu.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("process not found: %s", taskID)
+	}
+
+	proc.cancel()
+
+	// Send SIGTERM first
+	if proc.cmd.Process != nil {
+		proc.cmd.Process.Signal(syscall.SIGTERM)
+
+		// Wait briefly, then force kill
+		select {
+		case <-proc.done:
+			// Process exited gracefully
+		case <-time.After(5 * time.Second):
+			proc.cmd.Process.Kill()
+		}
+	}
+
+	proc.task.Status = models.TaskStatusCancelled
+
+	return nil
+}
+
+// GetProcess returns information about a running process.
+func (s *Spawner) GetProcess(taskID string) (*Process, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	proc, exists := s.processes[taskID]
+	return proc, exists
+}
+
+// IsRunning checks if a task is currently running.
+func (s *Spawner) IsRunning(taskID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, exists := s.processes[taskID]
+	return exists
+}
+
+// Wait blocks until a task completes or context is cancelled.
+func (s *Spawner) Wait(ctx context.Context, taskID string) error {
+	s.mu.RLock()
+	proc, exists := s.processes[taskID]
+	s.mu.RUnlock()
+
+	if !exists {
+		return nil // Already completed
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-proc.done:
+		return nil
+	}
+}
+
+// RunningCount returns the number of currently running processes.
+func (s *Spawner) RunningCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.processes)
+}
+
+// Shutdown cancels all running processes.
+func (s *Spawner) Shutdown() {
+	s.mu.Lock()
+	procs := make([]*Process, 0, len(s.processes))
+	for _, p := range s.processes {
+		procs = append(procs, p)
+	}
+	s.mu.Unlock()
+
+	for _, proc := range procs {
+		proc.cancel()
+		if proc.cmd.Process != nil {
+			proc.cmd.Process.Signal(syscall.SIGTERM)
+		}
+	}
+
+	// Wait for all to finish
+	for _, proc := range procs {
+		select {
+		case <-proc.done:
+		case <-time.After(10 * time.Second):
+			if proc.cmd.Process != nil {
+				proc.cmd.Process.Kill()
+			}
+		}
+	}
+}

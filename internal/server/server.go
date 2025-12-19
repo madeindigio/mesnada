@@ -1,0 +1,381 @@
+// Package server implements the MCP server with HTTP Streamable transport.
+package server
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/sevir/mesnada/internal/orchestrator"
+)
+
+const (
+	jsonRPCVersion = "2.0"
+	mcpVersion     = "2024-11-05"
+)
+
+// Server is the MCP HTTP Streamable server.
+type Server struct {
+	orchestrator *orchestrator.Orchestrator
+	addr         string
+	httpServer   *http.Server
+	sessions     map[string]*Session
+	sessionMu    sync.RWMutex
+	tools        map[string]ToolHandler
+}
+
+// Session represents an MCP session.
+type Session struct {
+	ID        string
+	CreatedAt time.Time
+	events    chan []byte
+	closed    bool
+	mu        sync.Mutex
+}
+
+// JSONRPCRequest represents a JSON-RPC 2.0 request.
+type JSONRPCRequest struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      interface{}     `json:"id,omitempty"`
+	Method  string          `json:"method"`
+	Params  json.RawMessage `json:"params,omitempty"`
+}
+
+// JSONRPCResponse represents a JSON-RPC 2.0 response.
+type JSONRPCResponse struct {
+	JSONRPC string        `json:"jsonrpc"`
+	ID      interface{}   `json:"id,omitempty"`
+	Result  interface{}   `json:"result,omitempty"`
+	Error   *JSONRPCError `json:"error,omitempty"`
+}
+
+// JSONRPCError represents a JSON-RPC 2.0 error.
+type JSONRPCError struct {
+	Code    int         `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data,omitempty"`
+}
+
+// ToolHandler handles a tool call.
+type ToolHandler func(ctx context.Context, params json.RawMessage) (interface{}, error)
+
+// Config holds server configuration.
+type Config struct {
+	Addr         string
+	Orchestrator *orchestrator.Orchestrator
+}
+
+// New creates a new MCP server.
+func New(cfg Config) *Server {
+	s := &Server{
+		orchestrator: cfg.Orchestrator,
+		addr:         cfg.Addr,
+		sessions:     make(map[string]*Session),
+		tools:        make(map[string]ToolHandler),
+	}
+
+	s.registerTools()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/mcp", s.handleMCP)
+	mux.HandleFunc("/mcp/sse", s.handleSSE)
+	mux.HandleFunc("/health", s.handleHealth)
+
+	s.httpServer = &http.Server{
+		Addr:         cfg.Addr,
+		Handler:      s.corsMiddleware(mux),
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 0, // No timeout for SSE
+	}
+
+	return s
+}
+
+func (s *Server) corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Mcp-Session-Id")
+		w.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Start starts the HTTP server.
+func (s *Server) Start() error {
+	log.Printf("MCP server starting on %s", s.addr)
+	return s.httpServer.ListenAndServe()
+}
+
+// Shutdown gracefully shuts down the server.
+func (s *Server) Shutdown(ctx context.Context) error {
+	return s.httpServer.Shutdown(ctx)
+}
+
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	stats := s.orchestrator.GetStats()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "healthy",
+		"stats":  stats,
+	})
+}
+
+func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get or create session
+	sessionID := r.Header.Get("Mcp-Session-Id")
+	if sessionID == "" {
+		sessionID = uuid.New().String()
+	}
+
+	s.sessionMu.Lock()
+	session, exists := s.sessions[sessionID]
+	if !exists {
+		session = &Session{
+			ID:        sessionID,
+			CreatedAt: time.Now(),
+			events:    make(chan []byte, 100),
+		}
+		s.sessions[sessionID] = session
+	}
+	s.sessionMu.Unlock()
+
+	// Parse request
+	var req JSONRPCRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, nil, -32700, "Parse error", err.Error())
+		return
+	}
+
+	// Set session header
+	w.Header().Set("Mcp-Session-Id", sessionID)
+	w.Header().Set("Content-Type", "application/json")
+
+	// Handle request
+	response := s.handleRequest(r.Context(), session, &req)
+	json.NewEncoder(w).Encode(response)
+}
+
+func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.Header.Get("Mcp-Session-Id")
+	if sessionID == "" {
+		http.Error(w, "Missing Mcp-Session-Id header", http.StatusBadRequest)
+		return
+	}
+
+	s.sessionMu.RLock()
+	session, exists := s.sessions[sessionID]
+	s.sessionMu.RUnlock()
+
+	if !exists {
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "SSE not supported", http.StatusInternalServerError)
+		return
+	}
+
+	// Send initial connection event
+	fmt.Fprintf(w, "event: connected\ndata: {\"sessionId\":\"%s\"}\n\n", sessionID)
+	flusher.Flush()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case data := <-session.events:
+			fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+			flusher.Flush()
+		}
+	}
+}
+
+func (s *Server) handleRequest(ctx context.Context, session *Session, req *JSONRPCRequest) *JSONRPCResponse {
+	switch req.Method {
+	case "initialize":
+		return s.handleInitialize(req)
+	case "initialized":
+		return s.handleInitialized(req)
+	case "tools/list":
+		return s.handleToolsList(req)
+	case "tools/call":
+		return s.handleToolsCall(ctx, req)
+	case "ping":
+		return s.handlePing(req)
+	default:
+		return &JSONRPCResponse{
+			JSONRPC: jsonRPCVersion,
+			ID:      req.ID,
+			Error: &JSONRPCError{
+				Code:    -32601,
+				Message: "Method not found",
+			},
+		}
+	}
+}
+
+func (s *Server) handleInitialize(req *JSONRPCRequest) *JSONRPCResponse {
+	return &JSONRPCResponse{
+		JSONRPC: jsonRPCVersion,
+		ID:      req.ID,
+		Result: map[string]interface{}{
+			"protocolVersion": mcpVersion,
+			"serverInfo": map[string]string{
+				"name":    "mesnada",
+				"version": "1.0.0",
+			},
+			"capabilities": map[string]interface{}{
+				"tools": map[string]interface{}{},
+			},
+		},
+	}
+}
+
+func (s *Server) handleInitialized(req *JSONRPCRequest) *JSONRPCResponse {
+	return &JSONRPCResponse{
+		JSONRPC: jsonRPCVersion,
+		ID:      req.ID,
+		Result:  map[string]interface{}{},
+	}
+}
+
+func (s *Server) handlePing(req *JSONRPCRequest) *JSONRPCResponse {
+	return &JSONRPCResponse{
+		JSONRPC: jsonRPCVersion,
+		ID:      req.ID,
+		Result:  map[string]interface{}{},
+	}
+}
+
+func (s *Server) handleToolsList(req *JSONRPCRequest) *JSONRPCResponse {
+	tools := s.getToolDefinitions()
+	return &JSONRPCResponse{
+		JSONRPC: jsonRPCVersion,
+		ID:      req.ID,
+		Result: map[string]interface{}{
+			"tools": tools,
+		},
+	}
+}
+
+func (s *Server) handleToolsCall(ctx context.Context, req *JSONRPCRequest) *JSONRPCResponse {
+	var params struct {
+		Name      string          `json:"name"`
+		Arguments json.RawMessage `json:"arguments"`
+	}
+
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return &JSONRPCResponse{
+			JSONRPC: jsonRPCVersion,
+			ID:      req.ID,
+			Error: &JSONRPCError{
+				Code:    -32602,
+				Message: "Invalid params",
+				Data:    err.Error(),
+			},
+		}
+	}
+
+	handler, exists := s.tools[params.Name]
+	if !exists {
+		return &JSONRPCResponse{
+			JSONRPC: jsonRPCVersion,
+			ID:      req.ID,
+			Error: &JSONRPCError{
+				Code:    -32602,
+				Message: fmt.Sprintf("Unknown tool: %s", params.Name),
+			},
+		}
+	}
+
+	result, err := handler(ctx, params.Arguments)
+	if err != nil {
+		return &JSONRPCResponse{
+			JSONRPC: jsonRPCVersion,
+			ID:      req.ID,
+			Result: map[string]interface{}{
+				"content": []map[string]interface{}{
+					{
+						"type": "text",
+						"text": fmt.Sprintf("Error: %s", err.Error()),
+					},
+				},
+				"isError": true,
+			},
+		}
+	}
+
+	// Format result as MCP tool result
+	text, _ := json.MarshalIndent(result, "", "  ")
+	return &JSONRPCResponse{
+		JSONRPC: jsonRPCVersion,
+		ID:      req.ID,
+		Result: map[string]interface{}{
+			"content": []map[string]interface{}{
+				{
+					"type": "text",
+					"text": string(text),
+				},
+			},
+		},
+	}
+}
+
+func (s *Server) writeError(w http.ResponseWriter, id interface{}, code int, message, data string) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(&JSONRPCResponse{
+		JSONRPC: jsonRPCVersion,
+		ID:      id,
+		Error: &JSONRPCError{
+			Code:    code,
+			Message: message,
+			Data:    data,
+		},
+	})
+}
+
+// SendEvent sends an event to a session.
+func (s *Server) SendEvent(sessionID string, event interface{}) error {
+	s.sessionMu.RLock()
+	session, exists := s.sessions[sessionID]
+	s.sessionMu.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	data, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+
+	select {
+	case session.events <- data:
+		return nil
+	default:
+		return fmt.Errorf("event channel full")
+	}
+}
