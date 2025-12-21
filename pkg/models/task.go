@@ -11,6 +11,7 @@ type TaskStatus string
 const (
 	TaskStatusPending   TaskStatus = "pending"
 	TaskStatusRunning   TaskStatus = "running"
+	TaskStatusPaused    TaskStatus = "paused"
 	TaskStatusCompleted TaskStatus = "completed"
 	TaskStatusFailed    TaskStatus = "failed"
 	TaskStatusCancelled TaskStatus = "cancelled"
@@ -79,7 +80,8 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 func (t *Task) IsTerminal() bool {
 	return t.Status == TaskStatusCompleted ||
 		t.Status == TaskStatusFailed ||
-		t.Status == TaskStatusCancelled
+		t.Status == TaskStatusCancelled ||
+		t.Status == TaskStatusPaused
 }
 
 // IsRunning returns true if the task is currently running.

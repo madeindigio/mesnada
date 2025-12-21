@@ -7,7 +7,9 @@
         "--config-file",
         "/home/sevir/.config/hyper-mcp/assistant.yaml"
       ],
-      "tools": ["*"]
+      "tools": [
+        "*"
+      ]
     },
     "remembrances": {
       "type": "local",
@@ -17,12 +19,16 @@
         "--config",
         "./.ai/remembrances.config.yaml"
       ],
-      "tools": ["*"]
+      "tools": [
+        "*"
+      ]
     },
     "mesnada": {
       "type": "http",
-      "url": "http://127.0.0.1:8765/mcp",
-      "tools": ["*"]
+      "url": "http://127.0.0.1:8766/mcp",
+      "tools": [
+        "*"
+      ]
     }
   }
 }

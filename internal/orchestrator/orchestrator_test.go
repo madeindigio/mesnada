@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,10 +78,10 @@ func TestOrchestratorDefaultMCPConfigApplied(t *testing.T) {
 
 	defaultCfg := "@.github/mcp-config.json"
 	orch, err := New(Config{
-		StorePath:         filepath.Join(tmpDir, "tasks.json"),
-		LogDir:            filepath.Join(tmpDir, "logs"),
-		MaxParallel:       1,
-		DefaultMCPConfig:  defaultCfg,
+		StorePath:        filepath.Join(tmpDir, "tasks.json"),
+		LogDir:           filepath.Join(tmpDir, "logs"),
+		MaxParallel:      1,
+		DefaultMCPConfig: defaultCfg,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create orchestrator: %v", err)
@@ -240,6 +241,51 @@ func TestOrchestratorDelete(t *testing.T) {
 	_, err = orch.GetTask(task.ID)
 	if err == nil {
 		t.Error("Expected error getting deleted task")
+	}
+}
+
+func TestOrchestratorPauseAndResume(t *testing.T) {
+	orch, cleanup := setupTestOrchestrator(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Create a task that stays pending by giving it an unmet dependency.
+	task, err := orch.Spawn(ctx, models.SpawnRequest{
+		Prompt:       "p",
+		WorkDir:      "/tmp",
+		Background:   true,
+		Dependencies: []string{"missing-dep"},
+	})
+	if err != nil {
+		t.Fatalf("Failed to spawn task: %v", err)
+	}
+
+	// Ensure we carry a log path through resume.
+	task.LogFile = "/tmp/mesnada-prev.log"
+
+	paused, err := orch.Pause(task.ID)
+	if err != nil {
+		t.Fatalf("Pause failed: %v", err)
+	}
+	if paused.Status != models.TaskStatusPaused {
+		t.Fatalf("Expected paused status, got %s", paused.Status)
+	}
+
+	stats := orch.GetStats()
+	if stats.Paused < 1 {
+		t.Fatalf("Expected paused count >= 1, got %d", stats.Paused)
+	}
+
+	resumed, err := orch.Resume(ctx, task.ID, ResumeOptions{Prompt: "continue", Background: true})
+	if err != nil {
+		t.Fatalf("Resume failed: %v", err)
+	}
+	if resumed.ID == task.ID {
+		t.Fatalf("Expected new task ID")
+	}
+	if !strings.Contains(resumed.Prompt, task.LogFile) {
+		t.Fatalf("Expected resume prompt to reference previous log file path")
 	}
 }
 

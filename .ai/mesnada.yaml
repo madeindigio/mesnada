@@ -1,0 +1,60 @@
+# Mesnada Configuration File
+# This file defines model configurations and agent behaviors
+
+# Default model to use when none is specified
+default_model: "claude-sonnet-4.5"
+
+# List of available models with their descriptions
+models:
+  - id: "claude-sonnet-4.5"
+    description: "Use this model for coding tasks with a good programming practices"
+
+  - id: "claude-opus-4.5"
+    description: "Highest capability for complex reasoning and analysis"
+
+  - id: "claude-haiku-4.5"
+    description: "Fast responses for simple tasks and quick iterations"
+
+  - id: "gpt-5.1-codex-max"
+    description: "Advanced coding capabilities with extended context"
+
+  - id: "gpt-5.1-codex"
+    description: "Optimized for code generation and refactoring"
+
+  - id: "gpt-5.2"
+    description: "Use this model for orchestration and complex reasoning tasks, also for good professional coding tasks"
+
+  - id: "gpt-5.1"
+    description: "Stable GPT model for production use"
+
+  - id: "gpt-5"
+    description: "Base GPT-5 model"
+
+  - id: "gpt-5.1-codex-mini"
+    description: "Lightweight coding model for quick tasks"
+
+  - id: "gpt-5-mini"
+    description: "Fast and efficient for simple queries"
+
+  - id: "gpt-4.1"
+    description: "Reliable GPT-4 variant"
+
+  - id: "gemini-3-pro-preview"
+    description: "Use this model for multimodal tasks and big context requirements"
+
+# Server configuration
+server:
+  host: "127.0.0.1"
+  port: 8766
+
+# Orchestrator configuration
+orchestrator:
+  store_path: ".mesnada/tasks.json"
+  log_dir: ".mesnada/logs"
+  max_parallel: 5
+
+  # Additional MCP config to pass to Copilot CLI for every spawned task.
+  # This is passed as: copilot --additional-mcp-config <value>
+  # Use @<path> to reference a JSON file relative to the task working directory.
+  # Example: @.github/mcp-config.json
+  default_mcp_config: "@.github/mcp-config.json"

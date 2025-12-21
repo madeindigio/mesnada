@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/sevir/mesnada/internal/orchestrator"
 	"github.com/sevir/mesnada/pkg/models"
 )
 
@@ -23,6 +24,8 @@ func (s *Server) registerTools() {
 	s.tools["wait_task"] = s.toolWaitTask
 	s.tools["wait_multiple"] = s.toolWaitMultiple
 	s.tools["cancel_task"] = s.toolCancelTask
+	s.tools["pause_task"] = s.toolPauseTask
+	s.tools["resume_task"] = s.toolResumeTask
 	s.tools["delete_task"] = s.toolDeleteTask
 	s.tools["get_stats"] = s.toolGetStats
 	s.tools["get_task_output"] = s.toolGetTaskOutput
@@ -103,10 +106,10 @@ func (s *Server) getToolDefinitions() []Tool {
 				"type": "object",
 				"properties": map[string]interface{}{
 					"status": map[string]interface{}{
-						"type":        "array",
+						"type": "array",
 						"items": map[string]interface{}{
 							"type": "string",
-							"enum": []string{"pending", "running", "completed", "failed", "cancelled"},
+							"enum": []string{"pending", "running", "paused", "completed", "failed", "cancelled"},
 						},
 						"description": "Filter by task status",
 					},
@@ -182,6 +185,57 @@ func (s *Server) getToolDefinitions() []Tool {
 					},
 				},
 				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "pause_task",
+			Description: "Pause a running or pending task without marking it as cancelled",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{
+						"type":        "string",
+						"description": "The task ID to pause",
+					},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "resume_task",
+			Description: "Resume a paused task by spawning a new agent task that continues work",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{
+						"type":        "string",
+						"description": "The paused task ID to resume",
+					},
+					"prompt": map[string]interface{}{
+						"type":        "string",
+						"description": "Additional resume prompt/instructions",
+					},
+					"model": map[string]interface{}{
+						"type":        "string",
+						"description": "AI model to use (optional; defaults to previous task model)",
+						"enum":        []string{"claude-sonnet-4.5", "claude-haiku-4.5", "claude-opus-4.5", "claude-sonnet-4", "gpt-5.1-codex-max", "gpt-5.1-codex", "gpt-5.2", "gpt-5.1", "gpt-5", "gpt-5.1-codex-mini", "gpt-5-mini", "gpt-4.1", "gemini-3-pro-preview"},
+					},
+					"background": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Run in background (true) or wait for completion (false). Default: true",
+						"default":     true,
+					},
+					"timeout": map[string]interface{}{
+						"type":        "string",
+						"description": "Timeout duration (e.g., '30m', '1h'). Empty for no timeout",
+					},
+					"tags": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]string{"type": "string"},
+						"description": "Tags for organizing and filtering tasks (optional; defaults to previous task tags)",
+					},
+				},
+				"required": []string{"task_id", "prompt"},
 			},
 		},
 		{
@@ -472,6 +526,59 @@ func (s *Server) toolCancelTask(ctx context.Context, params json.RawMessage) (in
 	return map[string]interface{}{
 		"task_id":   req.TaskID,
 		"cancelled": true,
+	}, nil
+}
+
+func (s *Server) toolPauseTask(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req struct {
+		TaskID string `json:"task_id"`
+	}
+
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w", err)
+	}
+
+	task, err := s.orchestrator.Pause(req.TaskID)
+	if err != nil {
+		return nil, err
+	}
+
+	return task, nil
+}
+
+func (s *Server) toolResumeTask(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req struct {
+		TaskID     string    `json:"task_id"`
+		Prompt     string    `json:"prompt"`
+		Model      string    `json:"model"`
+		Background *bool     `json:"background"`
+		Timeout    string    `json:"timeout"`
+		Tags       *[]string `json:"tags"`
+	}
+
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w", err)
+	}
+
+	background := true
+	if req.Background != nil {
+		background = *req.Background
+	}
+
+	task, err := s.orchestrator.Resume(ctx, req.TaskID, orchestrator.ResumeOptions{
+		Prompt:     req.Prompt,
+		Model:      req.Model,
+		Background: background,
+		Timeout:    req.Timeout,
+		Tags:       req.Tags,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"task_id": task.ID,
+		"task":    task,
 	}, nil
 }
 

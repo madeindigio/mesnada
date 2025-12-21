@@ -157,7 +157,7 @@ func TestMCPToolsList(t *testing.T) {
 		}
 	}
 
-	expectedTools := []string{"spawn_agent", "get_task", "list_tasks", "wait_task", "cancel_task", "get_stats"}
+	expectedTools := []string{"spawn_agent", "get_task", "list_tasks", "wait_task", "cancel_task", "pause_task", "resume_task", "get_stats"}
 	for _, name := range expectedTools {
 		if !toolNames[name] {
 			t.Errorf("Expected tool '%s' not found", name)
@@ -195,7 +195,7 @@ func TestMCPToolsList(t *testing.T) {
 		t.Fatalf("Expected list_tasks.status.items.enum to be an array, got %T (%v)", items["enum"], items["enum"])
 	}
 
-	expectedStatuses := map[string]bool{"pending": true, "running": true, "completed": true, "failed": true, "cancelled": true}
+	expectedStatuses := map[string]bool{"pending": true, "running": true, "paused": true, "completed": true, "failed": true, "cancelled": true}
 	if len(enumVal) != len(expectedStatuses) {
 		t.Fatalf("Expected %d enum values, got %d", len(expectedStatuses), len(enumVal))
 	}

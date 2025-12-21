@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"log"
 	"net/http"
 	"sync"
@@ -23,10 +24,16 @@ const (
 type Server struct {
 	orchestrator *orchestrator.Orchestrator
 	addr         string
+	version      string
+	commit       string
 	httpServer   *http.Server
 	sessions     map[string]*Session
 	sessionMu    sync.RWMutex
 	tools        map[string]ToolHandler
+
+	uiOnce   sync.Once
+	uiTpl    *template.Template
+	uiTplErr error
 }
 
 // Session represents an MCP session.
@@ -68,6 +75,8 @@ type ToolHandler func(ctx context.Context, params json.RawMessage) (interface{},
 type Config struct {
 	Addr         string
 	Orchestrator *orchestrator.Orchestrator
+	Version      string
+	Commit       string
 }
 
 // New creates a new MCP server.
@@ -75,6 +84,8 @@ func New(cfg Config) *Server {
 	s := &Server{
 		orchestrator: cfg.Orchestrator,
 		addr:         cfg.Addr,
+		version:      cfg.Version,
+		commit:       cfg.Commit,
 		sessions:     make(map[string]*Session),
 		tools:        make(map[string]ToolHandler),
 	}
@@ -85,6 +96,9 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("/mcp", s.handleMCP)
 	mux.HandleFunc("/mcp/sse", s.handleSSE)
 	mux.HandleFunc("/health", s.handleHealth)
+
+	// UI + REST API are handled by Gin, while MCP endpoints remain on the stdlib mux.
+	mux.Handle("/", s.newGinEngine())
 
 	s.httpServer = &http.Server{
 		Addr:         cfg.Addr,

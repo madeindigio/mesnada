@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -17,22 +18,22 @@ import (
 
 // Orchestrator coordinates the execution of Copilot CLI agents.
 type Orchestrator struct {
-	store       store.Store
-	spawner     *agent.Spawner
-	subscribers map[string][]chan *models.Task
-	subMu       sync.RWMutex
-	maxParallel int
+	store            store.Store
+	spawner          *agent.Spawner
+	subscribers      map[string][]chan *models.Task
+	subMu            sync.RWMutex
+	maxParallel      int
 	defaultMCPConfig string
-	wg          sync.WaitGroup
-	ctx         context.Context
-	cancel      context.CancelFunc
+	wg               sync.WaitGroup
+	ctx              context.Context
+	cancel           context.CancelFunc
 }
 
 // Config holds orchestrator configuration.
 type Config struct {
-	StorePath   string
-	LogDir      string
-	MaxParallel int
+	StorePath        string
+	LogDir           string
+	MaxParallel      int
 	DefaultMCPConfig string
 }
 
@@ -50,12 +51,12 @@ func New(cfg Config) (*Orchestrator, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	o := &Orchestrator{
-		store:       fileStore,
-		subscribers: make(map[string][]chan *models.Task),
-		maxParallel: cfg.MaxParallel,
+		store:            fileStore,
+		subscribers:      make(map[string][]chan *models.Task),
+		maxParallel:      cfg.MaxParallel,
 		defaultMCPConfig: cfg.DefaultMCPConfig,
-		ctx:         ctx,
-		cancel:      cancel,
+		ctx:              ctx,
+		cancel:           cancel,
 	}
 
 	o.spawner = agent.NewSpawner(cfg.LogDir, o.onTaskComplete)
@@ -351,6 +352,98 @@ func (o *Orchestrator) Cancel(taskID string) error {
 	return nil
 }
 
+// Pause pauses a running or pending task.
+// Pausing stops the underlying Copilot process (if any) and marks the task as paused.
+func (o *Orchestrator) Pause(taskID string) (*models.Task, error) {
+	task, err := o.store.Get(taskID)
+	if err != nil {
+		return nil, err
+	}
+
+	if task.Status == models.TaskStatusPaused {
+		return task, nil
+	}
+
+	if task.IsTerminal() {
+		return nil, fmt.Errorf("task %s is already in terminal state: %s", taskID, task.Status)
+	}
+
+	if task.Status == models.TaskStatusRunning {
+		if err := o.spawner.Pause(taskID); err != nil {
+			return nil, err
+		}
+	}
+
+	task.Status = models.TaskStatusPaused
+	now := time.Now()
+	task.CompletedAt = &now
+
+	if err := o.store.Save(task); err != nil {
+		return nil, err
+	}
+	logTaskFinished(task)
+	return task, nil
+}
+
+// ResumeOptions controls how a paused task is resumed.
+type ResumeOptions struct {
+	Prompt     string
+	Model      string
+	Background bool
+	Timeout    string
+	Tags       *[]string
+}
+
+// Resume creates a new task to continue work from a previously paused task.
+func (o *Orchestrator) Resume(ctx context.Context, taskID string, opts ResumeOptions) (*models.Task, error) {
+	prev, err := o.store.Get(taskID)
+	if err != nil {
+		return nil, err
+	}
+	if prev.Status != models.TaskStatusPaused {
+		return nil, fmt.Errorf("task %s is not paused (status=%s)", taskID, prev.Status)
+	}
+	if strings.TrimSpace(opts.Prompt) == "" {
+		return nil, fmt.Errorf("prompt is required")
+	}
+
+	model := opts.Model
+	if model == "" {
+		model = prev.Model
+	}
+
+	timeout := opts.Timeout
+	if timeout == "" && prev.Timeout > 0 {
+		timeout = time.Duration(prev.Timeout).String()
+	}
+
+	tags := prev.Tags
+	if opts.Tags != nil {
+		tags = *opts.Tags
+	}
+
+	resumePrompt := fmt.Sprintf(
+		"Resume work from previous task_id: %s\nPrevious task log file path: %s\n\nAdditional resume instructions:\n%s\n",
+		prev.ID,
+		prev.LogFile,
+		strings.TrimSpace(opts.Prompt),
+	)
+
+	// Keep workdir/deps/config consistent with the paused task by default.
+	return o.Spawn(ctx, models.SpawnRequest{
+		Prompt:       resumePrompt,
+		WorkDir:      prev.WorkDir,
+		Model:        model,
+		Dependencies: prev.Dependencies,
+		Tags:         tags,
+		Priority:     prev.Priority,
+		Timeout:      timeout,
+		MCPConfig:    prev.MCPConfig,
+		ExtraArgs:    prev.ExtraArgs,
+		Background:   opts.Background,
+	})
+}
+
 // Delete removes a task from the store.
 func (o *Orchestrator) Delete(taskID string) error {
 	task, err := o.store.Get(taskID)
@@ -363,6 +456,39 @@ func (o *Orchestrator) Delete(taskID string) error {
 	}
 
 	return o.store.Delete(taskID)
+}
+
+// Purge stops a running task (if needed), deletes its log file (if any), and removes it from the store.
+// This operation is intentionally idempotent: purging a missing task returns nil.
+func (o *Orchestrator) Purge(taskID string) error {
+	task, err := o.store.Get(taskID)
+	if err != nil {
+		if strings.Contains(err.Error(), "task not found") {
+			return nil
+		}
+		return err
+	}
+
+	// Best-effort: stop the process if it is running.
+	if task.Status == models.TaskStatusRunning {
+		if err := o.spawner.Cancel(taskID); err != nil {
+			return err
+		}
+	}
+
+	// Best-effort: remove log file.
+	if task.LogFile != "" {
+		_ = os.Remove(task.LogFile)
+	}
+
+	if err := o.store.Delete(taskID); err != nil {
+		if strings.Contains(err.Error(), "task not found") {
+			return nil
+		}
+		return err
+	}
+
+	return nil
 }
 
 // SetProgress updates the progress of a running task.
@@ -413,6 +539,8 @@ func (o *Orchestrator) GetStats() Stats {
 					UpdatedAt:   task.Progress.UpdatedAt,
 				}
 			}
+		case models.TaskStatusPaused:
+			stats.Paused++
 		case models.TaskStatusCompleted:
 			stats.Completed++
 		case models.TaskStatusFailed:
@@ -438,6 +566,7 @@ type Stats struct {
 	Total           int                         `json:"total"`
 	Pending         int                         `json:"pending"`
 	Running         int                         `json:"running"`
+	Paused          int                         `json:"paused"`
 	Completed       int                         `json:"completed"`
 	Failed          int                         `json:"failed"`
 	Cancelled       int                         `json:"cancelled"`

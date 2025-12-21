@@ -47,6 +47,11 @@ func TestTaskStatus(t *testing.T) {
 	if !task.IsTerminal() {
 		t.Error("Expected task to be terminal")
 	}
+
+	task.Status = TaskStatusPaused
+	if !task.IsTerminal() {
+		t.Error("Expected task to be terminal")
+	}
 }
 
 func TestTaskToSummary(t *testing.T) {

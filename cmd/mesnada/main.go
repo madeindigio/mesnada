@@ -73,9 +73,9 @@ func main() {
 
 	// Create orchestrator
 	orch, err := orchestrator.New(orchestrator.Config{
-		StorePath:   cfg.Orchestrator.StorePath,
-		LogDir:      cfg.Orchestrator.LogDir,
-		MaxParallel: cfg.Orchestrator.MaxParallel,
+		StorePath:        cfg.Orchestrator.StorePath,
+		LogDir:           cfg.Orchestrator.LogDir,
+		MaxParallel:      cfg.Orchestrator.MaxParallel,
 		DefaultMCPConfig: cfg.Orchestrator.DefaultMCPConfig,
 	})
 	if err != nil {
@@ -86,6 +86,8 @@ func main() {
 	srv := server.New(server.Config{
 		Addr:         cfg.Address(),
 		Orchestrator: orch,
+		Version:      version,
+		Commit:       commit,
 	})
 
 	// Handle shutdown
@@ -114,6 +116,7 @@ func main() {
 
 	// Print startup info
 	log.Printf("mesnada %s starting", version)
+	log.Printf("UI endpoint:  http://%s/ui", cfg.Address())
 	log.Printf("MCP endpoint: http://%s/mcp", cfg.Address())
 	log.Printf("SSE endpoint: http://%s/mcp/sse", cfg.Address())
 	log.Printf("Health check: http://%s/health", cfg.Address())

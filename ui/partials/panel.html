@@ -1,0 +1,51 @@
+{{/* Right panel content for a selected task */}}
+<div class="panel-inner">
+  <div class="card-h">
+    <div>
+      <div style="font-weight:650">{{.Task.ID}}</div>
+      <div class="muted" style="margin-top:2px">{{.Task.Status}}</div>
+    </div>
+    <div class="panel-meta">
+      <div class="kv"><span class="muted">Progress</span> <b>{{.ProgressText}}</b></div>
+      <div class="kv"><span class="muted">Started</span> <b title="{{.WhenTitle}}">{{.WhenText}}</b></div>
+      {{if ne .FinishedText "—"}}
+      <div class="kv"><span class="muted">Finished</span> <b title="{{.FinishedTitle}}">{{.FinishedText}}</b></div>
+      {{end}}
+      {{if ne .DurationText "—"}}
+      <div class="kv"><span class="muted">Duration</span> <b>{{.DurationText}}</b></div>
+      {{end}}
+      <div class="kv"><span class="muted">Tags</span> <b>{{.TagsText}}</b></div>
+
+      {{if eq .Task.Status "running"}}
+      <button class="btn-ghost" title="Pause" aria-label="Pause" @click="Alpine.store('ui').pauseTask('{{.Task.ID}}')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 4h4v16H6z" />
+          <path d="M14 4h4v16h-4z" />
+        </svg>
+      </button>
+      {{end}}
+
+      {{if eq .Task.Status "paused"}}
+      <button class="btn-ghost" title="Resume" aria-label="Resume"
+        @click="Alpine.store('ui').openResume('{{.Task.ID}}')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 5v14l11-7z" />
+        </svg>
+      </button>
+      {{end}}
+    </div>
+  </div>
+
+  <div class="card-b" style="padding:10px 14px 10px">
+    <div class="muted">Prompt</div>
+    <div style="margin-top:6px">{{.Prompt}}</div>
+  </div>
+
+  <div class="log-wrap">
+    <div id="log-content" class="log" hx-get="/ui/partials/log?task_id={{.Task.ID}}" hx-trigger="load, every 5s"
+      hx-swap="innerHTML">Loading log…</div>
+    <div class="log-fade"></div>
+  </div>
+</div>

@@ -233,9 +233,11 @@ func (s *Spawner) waitForCompletion(proc *Process) {
 	proc.task.Output = proc.output.String()
 	proc.task.OutputTail = s.getTail(proc.output.String(), outputTailLines)
 
+	explicitStop := proc.task.Status == models.TaskStatusCancelled || proc.task.Status == models.TaskStatusPaused
+
 	if err != nil {
-		// Preserve explicit cancellation as the final status.
-		if proc.task.Status == models.TaskStatusCancelled {
+		// Preserve explicit stop statuses (cancelled/paused) as the final status.
+		if explicitStop {
 			if exitErr, ok := err.(*exec.ExitError); ok {
 				code := exitErr.ExitCode()
 				proc.task.ExitCode = &code
@@ -250,7 +252,7 @@ func (s *Spawner) waitForCompletion(proc *Process) {
 			}
 		}
 	} else {
-		if proc.task.Status != models.TaskStatusCancelled {
+		if !explicitStop {
 			proc.task.Status = models.TaskStatusCompleted
 		}
 		code := 0
@@ -300,6 +302,36 @@ func (s *Spawner) Cancel(taskID string) error {
 	}
 
 	proc.task.Status = models.TaskStatusCancelled
+
+	return nil
+}
+
+// Pause stops a running agent without marking it as cancelled.
+func (s *Spawner) Pause(taskID string) error {
+	s.mu.RLock()
+	proc, exists := s.processes[taskID]
+	s.mu.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("process not found: %s", taskID)
+	}
+
+	proc.cancel()
+
+	// Send SIGTERM first
+	if proc.cmd.Process != nil {
+		proc.cmd.Process.Signal(syscall.SIGTERM)
+
+		// Wait briefly, then force kill
+		select {
+		case <-proc.done:
+			// Process exited gracefully
+		case <-time.After(5 * time.Second):
+			proc.cmd.Process.Kill()
+		}
+	}
+
+	proc.task.Status = models.TaskStatusPaused
 
 	return nil
 }
