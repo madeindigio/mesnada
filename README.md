@@ -270,6 +270,46 @@ Compila el binario de mesnada.
 VERSION=$(git describe --tags --abbrev=0)
 go build -ldflags "-X main.version=$VERSION -X main.commit=$(git rev-parse --short HEAD)" -o mesnada ./cmd/mesnada
 ```
+
+### release
+
+Compila binarios para múltiples plataformas (Linux x64, Windows x64, macOS aarch64) y genera releases comprimidos en la carpeta `dist`.
+
+```bash
+# Crear carpeta dist
+mkdir -p dist
+
+# Get version from last git tag
+VERSION=$(git describe --tags --abbrev=0)
+
+# Función para build y zip
+build_and_zip() {
+    local os=$1
+    local arch=$2
+    local suffix=$3
+    local ext=$4
+    
+    echo "Building for $os-$arch..."
+    GOOS=$os GOARCH=$arch go build -ldflags "-X main.version=$VERSION -X main.commit=$(git rev-parse --short HEAD)" -o dist/mesnada-$suffix$ext ./cmd/mesnada
+    
+    echo "Zipping mesnada-$suffix$ext..."
+    cd dist
+    zip mesnada-$suffix.zip mesnada-$suffix$ext
+    rm mesnada-$suffix$ext
+    cd ..
+}
+
+# Linux x64
+build_and_zip linux amd64 linux-x64 ""
+
+# Windows x64
+build_and_zip windows amd64 windows-x64 ".exe"
+
+# macOS aarch64
+build_and_zip darwin arm64 darwin-arm64 ""
+
+echo "Release builds completed in dist/"
+```
 ## Licencia
 
 MIT
