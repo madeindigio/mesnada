@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,6 +47,10 @@ func NewSpawner(logDir string, onComplete func(task *models.Task)) *Spawner {
 	if logDir == "" {
 		home, _ := os.UserHomeDir()
 		logDir = filepath.Join(home, defaultLogDir)
+	}
+	// Ensure logDir is absolute so task.LogFile is a full path.
+	if abs, err := filepath.Abs(logDir); err == nil {
+		logDir = abs
 	}
 	os.MkdirAll(logDir, 0755)
 
@@ -128,6 +133,16 @@ func (s *Spawner) Spawn(ctx context.Context, task *models.Task) error {
 	now := time.Now()
 	task.StartedAt = &now
 	task.Status = models.TaskStatusRunning
+
+	log.Printf(
+		"task_event=started task_id=%s status=%s pid=%d log_file=%q work_dir=%q model=%q",
+		task.ID,
+		task.Status,
+		task.PID,
+		task.LogFile,
+		task.WorkDir,
+		task.Model,
+	)
 
 	proc := &Process{
 		cmd:     cmd,
@@ -219,15 +234,25 @@ func (s *Spawner) waitForCompletion(proc *Process) {
 	proc.task.OutputTail = s.getTail(proc.output.String(), outputTailLines)
 
 	if err != nil {
-		proc.task.Status = models.TaskStatusFailed
-		proc.task.Error = err.Error()
+		// Preserve explicit cancellation as the final status.
+		if proc.task.Status == models.TaskStatusCancelled {
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				code := exitErr.ExitCode()
+				proc.task.ExitCode = &code
+			}
+		} else {
+			proc.task.Status = models.TaskStatusFailed
+			proc.task.Error = err.Error()
 
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			code := exitErr.ExitCode()
-			proc.task.ExitCode = &code
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				code := exitErr.ExitCode()
+				proc.task.ExitCode = &code
+			}
 		}
 	} else {
-		proc.task.Status = models.TaskStatusCompleted
+		if proc.task.Status != models.TaskStatusCancelled {
+			proc.task.Status = models.TaskStatusCompleted
+		}
 		code := 0
 		proc.task.ExitCode = &code
 	}

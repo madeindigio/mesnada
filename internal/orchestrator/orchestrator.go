@@ -4,6 +4,8 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -64,6 +66,7 @@ func New(cfg Config) (*Orchestrator, error) {
 func (o *Orchestrator) onTaskComplete(task *models.Task) {
 	// Save final state
 	o.store.Save(task)
+	logTaskFinished(task)
 
 	// Notify subscribers
 	o.subMu.RLock()
@@ -98,6 +101,7 @@ func (o *Orchestrator) processDependentTasks(completed *models.Task) {
 
 	for _, task := range tasks {
 		if o.canStart(task) {
+			logTaskStartable(task, fmt.Sprintf("dependency_completed=%s", completed.ID))
 			go o.startTask(task)
 		}
 	}
@@ -127,6 +131,8 @@ func (o *Orchestrator) startTask(task *models.Task) {
 		task.Error = err.Error()
 		now := time.Now()
 		task.CompletedAt = &now
+		// When spawning fails, we still consider the task finished.
+		logTaskFinished(task)
 	}
 	o.store.Save(task)
 }
@@ -170,6 +176,8 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 		CreatedAt:    time.Now(),
 	}
 
+	logTaskReceived(task)
+
 	// Save task
 	if err := o.store.Save(task); err != nil {
 		return nil, fmt.Errorf("failed to save task: %w", err)
@@ -177,6 +185,11 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 
 	// Check if can start immediately
 	if o.canStart(task) {
+		reason := "dependencies_satisfied"
+		if len(task.Dependencies) == 0 {
+			reason = "no_dependencies"
+		}
+		logTaskStartable(task, reason)
 		if req.Background {
 			go o.startTask(task)
 		} else {
@@ -331,7 +344,11 @@ func (o *Orchestrator) Cancel(taskID string) error {
 	now := time.Now()
 	task.CompletedAt = &now
 
-	return o.store.Save(task)
+	if err := o.store.Save(task); err != nil {
+		return err
+	}
+	logTaskFinished(task)
+	return nil
 }
 
 // Delete removes a task from the store.
@@ -436,4 +453,64 @@ func (o *Orchestrator) Shutdown() error {
 
 func generateID() string {
 	return fmt.Sprintf("task-%s", uuid.New().String()[:8])
+}
+
+func logTaskReceived(task *models.Task) {
+	log.Printf(
+		"task_event=received task_id=%s status=%s work_dir=%q model=%q dependencies=%v tags=%v priority=%d timeout=%q mcp_config=%q extra_args=%v prompt_len=%d prompt_preview=%q",
+		task.ID,
+		task.Status,
+		task.WorkDir,
+		task.Model,
+		task.Dependencies,
+		task.Tags,
+		task.Priority,
+		time.Duration(task.Timeout).String(),
+		task.MCPConfig,
+		task.ExtraArgs,
+		len(task.Prompt),
+		truncateForLog(task.Prompt, 160),
+	)
+}
+
+func logTaskStartable(task *models.Task, reason string) {
+	log.Printf(
+		"task_event=startable task_id=%s status=%s reason=%q dependencies=%v",
+		task.ID,
+		task.Status,
+		reason,
+		task.Dependencies,
+	)
+}
+
+func logTaskFinished(task *models.Task) {
+	duration := ""
+	if task.StartedAt != nil && task.CompletedAt != nil {
+		duration = task.CompletedAt.Sub(*task.StartedAt).String()
+	}
+
+	exitCode := ""
+	if task.ExitCode != nil {
+		exitCode = fmt.Sprintf("%d", *task.ExitCode)
+	}
+
+	log.Printf(
+		"task_event=finished task_id=%s status=%s exit_code=%s error=%q duration=%q log_file=%q",
+		task.ID,
+		task.Status,
+		exitCode,
+		strings.TrimSpace(task.Error),
+		duration,
+		task.LogFile,
+	)
+}
+
+func truncateForLog(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-3] + "..."
 }
