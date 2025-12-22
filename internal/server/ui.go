@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/sevir/mesnada/pkg/models"
+	uiassets "github.com/sevir/mesnada/ui"
 )
 
 type uiTaskRow struct {
@@ -28,15 +30,15 @@ type uiTasksVM struct {
 }
 
 type uiPanelVM struct {
-	Task         *models.Task
-	ProgressText string
-	WhenText     string
-	WhenTitle    string
+	Task          *models.Task
+	ProgressText  string
+	WhenText      string
+	WhenTitle     string
 	FinishedText  string
 	FinishedTitle string
 	DurationText  string
-	TagsText     string
-	Prompt       string
+	TagsText      string
+	Prompt        string
 }
 
 type uiLogVM struct {
@@ -45,11 +47,7 @@ type uiLogVM struct {
 
 func (s *Server) getUITemplates() (*template.Template, error) {
 	s.uiOnce.Do(func() {
-		s.uiTpl, s.uiTplErr = template.ParseFiles(
-			"ui/partials/tasks.html",
-			"ui/partials/panel.html",
-			"ui/partials/log.html",
-		)
+		s.uiTpl, s.uiTplErr = template.ParseFS(fs.FS(uiassets.FS), "partials/*.html")
 	})
 	return s.uiTpl, s.uiTplErr
 }
@@ -151,15 +149,15 @@ func (s *Server) handleUIPanel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vm := uiPanelVM{
-		Task:         task,
-		ProgressText: progressText,
-		WhenText:     when.Format("2006-01-02 15:04:05"),
-		WhenTitle:    when.Format(time.RFC3339),
+		Task:          task,
+		ProgressText:  progressText,
+		WhenText:      when.Format("2006-01-02 15:04:05"),
+		WhenTitle:     when.Format(time.RFC3339),
 		FinishedText:  finishedText,
 		FinishedTitle: finishedTitle,
 		DurationText:  durationText,
-		TagsText:     tagsText,
-		Prompt:       stripTaskIDPrefix(task.Prompt),
+		TagsText:      tagsText,
+		Prompt:        stripTaskIDPrefix(task.Prompt),
 	}
 
 	tpl, err := s.getUITemplates()

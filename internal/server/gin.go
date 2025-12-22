@@ -2,6 +2,7 @@ package server
 
 import (
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sevir/mesnada/internal/orchestrator"
 	"github.com/sevir/mesnada/pkg/models"
+	uiassets "github.com/sevir/mesnada/ui"
 )
 
 func (s *Server) newGinEngine() *gin.Engine {
@@ -25,8 +27,22 @@ func (s *Server) newGinEngine() *gin.Engine {
 	})
 
 	// UI.
-	r.GET("/ui", func(c *gin.Context) { c.File("ui/index.html") })
-	r.GET("/ui/", func(c *gin.Context) { c.File("ui/index.html") })
+	r.GET("/ui", func(c *gin.Context) {
+		b, err := fs.ReadFile(uiassets.FS, "index.html")
+		if err != nil {
+			c.String(http.StatusInternalServerError, "failed to load UI")
+			return
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", b)
+	})
+	r.GET("/ui/", func(c *gin.Context) {
+		b, err := fs.ReadFile(uiassets.FS, "index.html")
+		if err != nil {
+			c.String(http.StatusInternalServerError, "failed to load UI")
+			return
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", b)
+	})
 
 	r.GET("/ui/partials/tasks", gin.WrapF(s.handleUITasks))
 	r.GET("/ui/partials/panel", gin.WrapF(s.handleUIPanel))
