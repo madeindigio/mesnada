@@ -10,6 +10,8 @@ MCP orchestrator to coordinate multiple instances of GitHub Copilot CLI in paral
 - **Persistence**: Task state saved to disk for recovery
 - **Full logs**: Each task generates a log file with all output
 
+![Mesnada Web UI](https://raw.githubusercontent.com/madeindigio/mesnada/refs/heads/main/examples/image.png)
+
 ## Installation
 
 ```bash
@@ -22,7 +24,6 @@ go build -o mesnada ./cmd/mesnada
 
 Mesnada supports configuration files in YAML or JSON format. By default, it looks for:
 1. `~/.mesnada/config.yaml`
-2. `~/.mesnada/config.json`
 
 ### Example YAML configuration
 
