@@ -10,7 +10,7 @@ MCP orchestrator to coordinate multiple instances of GitHub Copilot CLI in paral
 - **Persistence**: Task state saved to disk for recovery
 - **Full logs**: Each task generates a log file with all output
 
-![Mesnada Web UI](https://raw.githubusercontent.com/madeindigio/mesnada/refs/heads/main/examples/image.png)
+![Mesnada Web UI](https://github.com/madeindigio/mesnada/blob/main/examples/image.png?raw=true)
 
 ## Installation
 
