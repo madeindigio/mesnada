@@ -1,16 +1,16 @@
 # Mesnada
 
-Orquestador MCP para coordinar múltiples instancias de GitHub Copilot CLI en paralelo y secuencialmente.
+MCP orchestrator to coordinate multiple instances of GitHub Copilot CLI in parallel and sequentially.
 
-## Características
+## Features
 
-- **Servidor MCP HTTP Streamable**: Un único servidor que coordina todas las instancias de Copilot
-- **Ejecución en segundo plano**: Lanza agentes y espera a que terminen sin bloquear
-- **Dependencias entre tareas**: Define qué tareas deben completarse antes de iniciar otras
-- **Persistencia**: Estado de tareas guardado en disco para recuperación
-- **Logs completos**: Cada tarea genera un archivo de log con toda la salida
+- **Streamable MCP HTTP Server**: A single server that coordinates all Copilot instances
+- **Background execution**: Launches agents and waits for them to finish without blocking
+- **Task dependencies**: Define which tasks must be completed before starting others
+- **Persistence**: Task state saved to disk for recovery
+- **Full logs**: Each task generates a log file with all output
 
-## Instalación
+## Installation
 
 ```bash
 cd mesnada
@@ -18,19 +18,19 @@ go mod tidy
 go build -o mesnada ./cmd/mesnada
 ```
 
-## Configuración
+## Configuration
 
-Mesnada soporta archivos de configuración en formato YAML o JSON. Por defecto busca:
+Mesnada supports configuration files in YAML or JSON format. By default, it looks for:
 1. `~/.mesnada/config.yaml`
 2. `~/.mesnada/config.json`
 
-### Ejemplo de configuración YAML
+### Example YAML configuration
 
 ```yaml
-# Modelo por defecto cuando no se especifica
+# Default model when not specified
 default_model: "claude-sonnet-4.5"
 
-# Lista de modelos disponibles con descripciones
+# List of available models with descriptions
 models:
   - id: "claude-sonnet-4.5"
     description: "Balanced performance and speed for general tasks"
@@ -39,61 +39,61 @@ models:
   - id: "gpt-5.1-codex"
     description: "Optimized for code generation"
 
-# Configuración del servidor
+# Server configuration
 server:
   host: "127.0.0.1"
   port: 8765
 
-# Configuración del orquestador
+# Orchestrator configuration
 orchestrator:
   store_path: "~/.mesnada/tasks.json"
   log_dir: "~/.mesnada/logs"
   max_parallel: 5
 
-  # (Opcional) Config MCP adicional que se pasará a *todas* las instancias de Copilot CLI.
-  # Se traduce a: copilot --additional-mcp-config <valor>
-  # Si apuntas a un fichero, usa el prefijo @ (p.ej. @.github/mcp-config.json)
+  # (Optional) Additional MCP config that will be passed to *all* Copilot CLI instances.
+  # Translates to: copilot --additional-mcp-config <value>
+  # If pointing to a file, use the prefix @ (e.g. @.github/mcp-config.json)
   default_mcp_config: "@.github/mcp-config.json"
 ```
 
-Para crear una configuración inicial:
+To create an initial configuration:
 
 ```bash
 cp config.example.yaml ~/.mesnada/config.yaml
-# Edita el archivo según tus necesidades
+# Edit the file as needed
 ```
 
-## Uso
+## Usage
 
-### Iniciar el servidor
+### Start the server
 
 ```bash
-# Con configuración por defecto (puerto 8765)
+# With default configuration (port 8765)
 ./mesnada
 
-# Con puerto personalizado
+# With custom port
 ./mesnada --port 9000
 
-# Con configuración personalizada
+# With custom configuration
 ./mesnada --config ~/.mesnada/config.json
 ```
 
-### Opciones de línea de comandos
+### Command line options
 
 ```
---config       Ruta al archivo de configuración
---host         Host del servidor (default: 127.0.0.1)
---port         Puerto del servidor (default: 8765)
---store        Ruta al archivo de tareas
---log-dir      Directorio para logs de agentes
---max-parallel Máximo de agentes en paralelo
---version      Mostrar versión
---init         Inicializar configuración por defecto
+--config       Path to the configuration file
+--host         Server host (default: 127.0.0.1)
+--port         Server port (default: 8765)
+--store        Path to the tasks file
+--log-dir      Directory for agent logs
+--max-parallel Maximum parallel agents
+--version      Show version
+--init         Initialize default configuration
 ```
 
-## Configuración MCP para VSCode Copilot
+## MCP Configuration for VSCode Copilot
 
-Añade la siguiente configuración en tu `~/.copilot/mcp-config.json`:
+Add the following configuration to your `~/.copilot/mcp-config.json`:
 
 ```json
 {
@@ -106,16 +106,16 @@ Añade la siguiente configuración en tu `~/.copilot/mcp-config.json`:
 }
 ```
 
-O para usarlo directamente con Copilot CLI:
+Or to use it directly with Copilot CLI:
 
 ```bash
 copilot --additional-mcp-config '{"mcpServers":{"mesnada":{"type":"http","url":"http://127.0.0.1:8765/mcp"}}}'
 ```
 
-## Herramientas MCP disponibles
+## Available MCP tools
 
 ### spawn_agent
-Lanza un nuevo agente Copilot CLI para ejecutar una tarea.
+Launches a new Copilot CLI agent to execute a task.
 
 ```json
 {
@@ -130,7 +130,7 @@ Lanza un nuevo agente Copilot CLI para ejecutar una tarea.
 ```
 
 ### get_task
-Obtiene información detallada de una tarea.
+Gets detailed information about a task.
 
 ```json
 {
@@ -139,7 +139,7 @@ Obtiene información detallada de una tarea.
 ```
 
 ### list_tasks
-Lista tareas con filtros opcionales.
+Lists tasks with optional filters.
 
 ```json
 {
@@ -150,7 +150,7 @@ Lista tareas con filtros opcionales.
 ```
 
 ### wait_task
-Espera a que una tarea termine.
+Waits for a task to finish.
 
 ```json
 {
@@ -160,7 +160,7 @@ Espera a que una tarea termine.
 ```
 
 ### wait_multiple
-Espera a múltiples tareas.
+Waits for multiple tasks.
 
 ```json
 {
@@ -171,7 +171,7 @@ Espera a múltiples tareas.
 ```
 
 ### cancel_task
-Cancela una tarea en ejecución.
+Cancels a running task.
 
 ```json
 {
@@ -180,7 +180,7 @@ Cancela una tarea en ejecución.
 ```
 
 ### get_task_output
-Obtiene la salida de una tarea.
+Gets the output of a task.
 
 ```json
 {
@@ -190,7 +190,7 @@ Obtiene la salida de una tarea.
 ```
 
 ### set_progress
-Actualiza el progreso de una tarea en ejecución. Esta tool debe ser llamada por el propio agente.
+Updates the progress of a running task. This tool should be called by the agent itself.
 
 ```json
 {
@@ -200,70 +200,70 @@ Actualiza el progreso de una tarea en ejecución. Esta tool debe ser llamada por
 }
 ```
 
-**Nota**: El campo `percentage` acepta valores numéricos o strings. Cualquier carácter no numérico será eliminado automáticamente (ej: "45%" → 45).
+**Note**: The `percentage` field accepts numeric values or strings. Any non-numeric character will be automatically removed (e.g., "45%" → 45).
 
 ### get_stats
-Obtiene estadísticas del orquestador, incluyendo el progreso de las tareas en ejecución.
+Gets orchestrator statistics, including the progress of running tasks.
 
-**Respuesta incluye**:
-- Contadores por estado (pending, running, completed, failed, cancelled)
-- `running_progress`: Mapa con el progreso de cada tarea activa
+**Response includes**:
+- Counters by status (pending, running, completed, failed, cancelled)
+- `running_progress`: Map with the progress of each active task
 
-## Ejemplos de uso desde Copilot
+## Usage examples from Copilot
 
-### Ejecutar tareas en paralelo
-
-```
-Usa mesnada para ejecutar estas 3 tareas en paralelo:
-1. En /project/frontend: "Añade validación al formulario de login"
-2. En /project/backend: "Implementa el endpoint /api/users"
-3. En /project/docs: "Actualiza la documentación de la API"
-
-Espera a que todas terminen y muéstrame un resumen.
-```
-
-### Ejecutar tareas con dependencias
+### Run tasks in parallel
 
 ```
-Usa mesnada para:
-1. Primero ejecuta "npm install" en /project
-2. Cuando termine, ejecuta en paralelo:
-   - "npm run lint" 
+Use mesnada to run these 3 tasks in parallel:
+1. In /project/frontend: "Add validation to the login form"
+2. In /project/backend: "Implement the /api/users endpoint"
+3. In /project/docs: "Update the API documentation"
+
+Wait for all to finish and show me a summary.
+```
+
+### Run tasks with dependencies
+
+```
+Use mesnada to:
+1. First run "npm install" in /project
+2. When finished, run in parallel:
+   - "npm run lint"
    - "npm run test"
-3. Si ambos pasan, ejecuta "npm run build"
+3. If both pass, run "npm run build"
 ```
 
-## Estructura del proyecto
+## Project structure
 
 ```
 mesnada/
-├── cmd/mesnada/          # Punto de entrada
+├── cmd/mesnada/          # Entry point
 ├── internal/
-│   ├── agent/            # Spawner de procesos Copilot
-│   ├── config/           # Configuración
-│   ├── orchestrator/     # Coordinador principal
-│   ├── server/           # Servidor MCP HTTP
-│   └── store/            # Persistencia de tareas
-└── pkg/models/           # Modelos de dominio
+│   ├── agent/            # Copilot process spawner
+│   ├── config/           # Configuration
+│   ├── orchestrator/     # Main coordinator
+│   ├── server/           # MCP HTTP server
+│   └── store/            # Task persistence
+└── pkg/models/           # Domain models
 ```
 
-## Desarrollo
+## Development
 
 ```bash
-# Ejecutar tests
+# Run tests
 go test ./... -v
 
 # Build
 go build -o mesnada ./cmd/mesnada
 
-# Build con información de versión
+# Build with version info
 go build -ldflags "-X main.version=1.0.0 -X main.commit=$(git rev-parse --short HEAD)" -o mesnada ./cmd/mesnada
 ```
 ## Tasks
 
 ### build
 
-Compila el binario de mesnada.
+Compiles the mesnada binary.
 
 ```bash
 # Get version from last git tag
@@ -271,18 +271,30 @@ VERSION=$(git describe --tags --abbrev=0)
 go build -ldflags "-X main.version=$VERSION -X main.commit=$(git rev-parse --short HEAD)" -o mesnada ./cmd/mesnada
 ```
 
-### release
+### build-and-copy
 
-Compila binarios para múltiples plataformas (Linux x64, Windows x64, macOS aarch64) y genera releases comprimidos en la carpeta `dist`.
+Compiles the mesnada binary. Copies the binary to the specified path folder.
 
 ```bash
-# Crear carpeta dist
+# Get version from last git tag
+VERSION=$(git describe --tags --abbrev=0)
+go build -ldflags "-X main.version=$VERSION -X main.commit=$(git rev-parse --short HEAD)" -o mesnada ./cmd/mesnada
+rm -f ~/bin/mesnada
+cp mesnada ~/bin/mesnada
+```
+
+### release
+
+Compiles binaries for multiple platforms (Linux x64, Windows x64, macOS aarch64) and generates compressed releases in the `dist` folder.
+
+```bash
+# Create dist folder
 mkdir -p dist
 
 # Get version from last git tag
 VERSION=$(git describe --tags --abbrev=0)
 
-# Función para build y zip
+# Function to build and zip
 build_and_zip() {
     local os=$1
     local arch=$2
@@ -310,6 +322,6 @@ build_and_zip darwin arm64 darwin-arm64 ""
 
 echo "Release builds completed in dist/"
 ```
-## Licencia
+## License
 
 MIT
