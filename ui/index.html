@@ -628,6 +628,17 @@
         <div class="wrap" x-data>
             <div class="topbar">
                 <div class="title">Mesnada · Agent Team Management</div>
+                <label
+                    class="toggle"
+                    title="Auto-scroll log to bottom on updates"
+                >
+                    <input
+                        type="checkbox"
+                        x-model="$store.ui.autoscroll"
+                        checked
+                    />
+                    <span>Autoscroll</span>
+                </label>
                 <div class="pill" id="version-pill">
                     <span class="muted">Mesnada</span>
                     <span id="version-text">v— (—)</span>
@@ -679,17 +690,6 @@
                 <aside class="card panel right-pane" id="right-panel">
                     <div class="card-h">
                         <div class="muted">Task details</div>
-                        <label
-                            class="toggle"
-                            title="Auto-scroll log to bottom on updates"
-                        >
-                            <input
-                                type="checkbox"
-                                x-model="$store.ui.autoscroll"
-                                checked
-                            />
-                            <span>Autoscroll</span>
-                        </label>
                     </div>
                     <div class="empty">
                         Select a task to view logs (polling every 5s).
