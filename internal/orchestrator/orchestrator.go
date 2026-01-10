@@ -16,14 +16,15 @@ import (
 	"github.com/sevir/mesnada/pkg/models"
 )
 
-// Orchestrator coordinates the execution of Copilot CLI agents.
+// Orchestrator coordinates the execution of CLI agents.
 type Orchestrator struct {
 	store            store.Store
-	spawner          *agent.Spawner
+	manager          *agent.Manager
 	subscribers      map[string][]chan *models.Task
 	subMu            sync.RWMutex
 	maxParallel      int
 	defaultMCPConfig string
+	defaultEngine    models.Engine
 	wg               sync.WaitGroup
 	ctx              context.Context
 	cancel           context.CancelFunc
@@ -35,6 +36,7 @@ type Config struct {
 	LogDir           string
 	MaxParallel      int
 	DefaultMCPConfig string
+	DefaultEngine    string
 }
 
 // New creates a new Orchestrator.
@@ -50,16 +52,23 @@ func New(cfg Config) (*Orchestrator, error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// Parse default engine
+	defaultEngine := models.Engine(cfg.DefaultEngine)
+	if !models.ValidEngine(defaultEngine) {
+		defaultEngine = models.DefaultEngine()
+	}
+
 	o := &Orchestrator{
 		store:            fileStore,
 		subscribers:      make(map[string][]chan *models.Task),
 		maxParallel:      cfg.MaxParallel,
 		defaultMCPConfig: cfg.DefaultMCPConfig,
+		defaultEngine:    defaultEngine,
 		ctx:              ctx,
 		cancel:           cancel,
 	}
 
-	o.spawner = agent.NewSpawner(cfg.LogDir, o.onTaskComplete)
+	o.manager = agent.NewManager(cfg.LogDir, o.onTaskComplete)
 
 	return o, nil
 }
@@ -127,7 +136,7 @@ func (o *Orchestrator) canStart(task *models.Task) bool {
 }
 
 func (o *Orchestrator) startTask(task *models.Task) {
-	if err := o.spawner.Spawn(o.ctx, task); err != nil {
+	if err := o.manager.Spawn(o.ctx, task); err != nil {
 		task.Status = models.TaskStatusFailed
 		task.Error = err.Error()
 		now := time.Now()
@@ -162,11 +171,18 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 		mcpConfig = o.defaultMCPConfig
 	}
 
+	// Apply orchestrator default engine when not explicitly provided.
+	engine := req.Engine
+	if engine == "" {
+		engine = o.defaultEngine
+	}
+
 	task := &models.Task{
 		ID:           generateID(),
 		Prompt:       req.Prompt,
 		WorkDir:      workDir,
 		Status:       models.TaskStatusPending,
+		Engine:       engine,
 		Model:        req.Model,
 		Dependencies: req.Dependencies,
 		Tags:         req.Tags,
@@ -256,7 +272,7 @@ func (o *Orchestrator) Wait(ctx context.Context, taskID string, timeout time.Dur
 
 	// Also wait on spawner in case task completes between check and subscribe
 	go func() {
-		o.spawner.Wait(waitCtx, taskID)
+		o.manager.Wait(waitCtx, taskID)
 		task, _ := o.store.Get(taskID)
 		if task != nil && task.IsTerminal() {
 			select {
@@ -336,7 +352,7 @@ func (o *Orchestrator) Cancel(taskID string) error {
 	}
 
 	if task.Status == models.TaskStatusRunning {
-		if err := o.spawner.Cancel(taskID); err != nil {
+		if err := o.manager.Cancel(taskID); err != nil {
 			return err
 		}
 	}
@@ -369,7 +385,7 @@ func (o *Orchestrator) Pause(taskID string) (*models.Task, error) {
 	}
 
 	if task.Status == models.TaskStatusRunning {
-		if err := o.spawner.Pause(taskID); err != nil {
+		if err := o.manager.Pause(taskID); err != nil {
 			return nil, err
 		}
 	}
@@ -471,7 +487,7 @@ func (o *Orchestrator) Purge(taskID string) error {
 
 	// Best-effort: stop the process if it is running.
 	if task.Status == models.TaskStatusRunning {
-		if err := o.spawner.Cancel(taskID); err != nil {
+		if err := o.manager.Cancel(taskID); err != nil {
 			return err
 		}
 	}
@@ -520,7 +536,7 @@ func (o *Orchestrator) GetStats() Stats {
 	tasks, _ := o.store.List(store.ListFilter{})
 
 	stats := Stats{
-		Running:         o.spawner.RunningCount(),
+		Running:         o.manager.RunningCount(),
 		RunningProgress: make(map[string]TaskProgressInfo),
 	}
 
@@ -576,7 +592,7 @@ type Stats struct {
 // Shutdown gracefully shuts down the orchestrator.
 func (o *Orchestrator) Shutdown() error {
 	o.cancel()
-	o.spawner.Shutdown()
+	o.manager.Shutdown()
 	return o.store.Close()
 }
 
@@ -586,10 +602,11 @@ func generateID() string {
 
 func logTaskReceived(task *models.Task) {
 	log.Printf(
-		"task_event=received task_id=%s status=%s work_dir=%q model=%q dependencies=%v tags=%v priority=%d timeout=%q mcp_config=%q extra_args=%v prompt_len=%d prompt_preview=%q",
+		"task_event=received task_id=%s status=%s work_dir=%q engine=%q model=%q dependencies=%v tags=%v priority=%d timeout=%q mcp_config=%q extra_args=%v prompt_len=%d prompt_preview=%q",
 		task.ID,
 		task.Status,
 		task.WorkDir,
+		task.Engine,
 		task.Model,
 		task.Dependencies,
 		task.Tags,

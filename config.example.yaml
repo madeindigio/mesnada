@@ -53,8 +53,16 @@ orchestrator:
   log_dir: "~/.mesnada/logs"
   max_parallel: 5
 
-  # Additional MCP config to pass to Copilot CLI for every spawned task.
-  # This is passed as: copilot --additional-mcp-config <value>
+  # Additional MCP config to pass to the CLI for every spawned task.
+  # For Copilot: passed as copilot --additional-mcp-config <value>
+  # For Claude: automatically converted to Claude CLI format and passed as --mcp-config
   # Use @<path> to reference a JSON file relative to the task working directory.
   # Example: @.github/mcp-config.json
   default_mcp_config: "@.github/mcp-config.json"
+
+  # Default CLI engine to use for spawning agents.
+  # Supported engines:
+  #   - "copilot": GitHub Copilot CLI (default)
+  #   - "claude": Anthropic Claude CLI
+  # Can be overridden per-task via the spawn_agent tool.
+  default_engine: "copilot"

@@ -33,10 +33,11 @@ type ServerConfig struct {
 
 // OrchestratorConfig holds orchestrator configuration.
 type OrchestratorConfig struct {
-	StorePath         string `json:"store_path" yaml:"store_path"`
-	LogDir            string `json:"log_dir" yaml:"log_dir"`
-	MaxParallel       int    `json:"max_parallel" yaml:"max_parallel"`
-	DefaultMCPConfig  string `json:"default_mcp_config" yaml:"default_mcp_config"`
+	StorePath        string `json:"store_path" yaml:"store_path"`
+	LogDir           string `json:"log_dir" yaml:"log_dir"`
+	MaxParallel      int    `json:"max_parallel" yaml:"max_parallel"`
+	DefaultMCPConfig string `json:"default_mcp_config" yaml:"default_mcp_config"`
+	DefaultEngine    string `json:"default_engine" yaml:"default_engine"`
 }
 
 // DefaultConfig returns the default configuration.

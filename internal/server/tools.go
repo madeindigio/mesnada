@@ -36,17 +36,23 @@ func (s *Server) getToolDefinitions() []Tool {
 	return []Tool{
 		{
 			Name:        "spawn_agent",
-			Description: "Spawn a new Copilot CLI agent to execute a task. The agent runs in the specified working directory with full tool access. Use background=true for long-running tasks.",
+			Description: "Spawn a new CLI agent to execute a task. Supports multiple engines: 'copilot' (GitHub Copilot CLI) or 'claude' (Anthropic Claude CLI). The agent runs in the specified working directory with full tool access. Use background=true for long-running tasks.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"prompt": map[string]interface{}{
 						"type":        "string",
-						"description": "The prompt/instruction for the Copilot agent to execute",
+						"description": "The prompt/instruction for the agent to execute",
 					},
 					"work_dir": map[string]interface{}{
 						"type":        "string",
 						"description": "Working directory for the agent (absolute path)",
+					},
+					"engine": map[string]interface{}{
+						"type":        "string",
+						"description": "CLI engine to use: 'copilot' (GitHub Copilot CLI, default) or 'claude' (Anthropic Claude CLI)",
+						"enum":        []string{"copilot", "claude"},
+						"default":     "copilot",
 					},
 					"model": map[string]interface{}{
 						"type":        "string",
@@ -74,12 +80,12 @@ func (s *Server) getToolDefinitions() []Tool {
 					},
 					"mcp_config": map[string]interface{}{
 						"type":        "string",
-						"description": "Additional MCP configuration JSON or file path (prefix with @)",
+						"description": "Additional MCP configuration JSON or file path (prefix with @). For Claude engine, this will be automatically converted to Claude CLI format.",
 					},
 					"extra_args": map[string]interface{}{
 						"type":        "array",
 						"items":       map[string]string{"type": "string"},
-						"description": "Additional command-line arguments for copilot CLI",
+						"description": "Additional command-line arguments for the CLI engine",
 					},
 				},
 				"required": []string{"prompt"},
@@ -307,6 +313,7 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 	var req struct {
 		Prompt       string   `json:"prompt"`
 		WorkDir      string   `json:"work_dir"`
+		Engine       string   `json:"engine"`
 		Model        string   `json:"model"`
 		Background   *bool    `json:"background"`
 		Timeout      string   `json:"timeout"`
@@ -324,6 +331,12 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 		return nil, fmt.Errorf("prompt is required")
 	}
 
+	// Validate engine if provided
+	engine := models.Engine(req.Engine)
+	if req.Engine != "" && !models.ValidEngine(engine) {
+		return nil, fmt.Errorf("invalid engine: %s (valid: copilot, claude)", req.Engine)
+	}
+
 	// Default to background execution
 	background := true
 	if req.Background != nil {
@@ -333,6 +346,7 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 	task, err := s.orchestrator.Spawn(ctx, models.SpawnRequest{
 		Prompt:       req.Prompt,
 		WorkDir:      req.WorkDir,
+		Engine:       engine,
 		Model:        req.Model,
 		Background:   background,
 		Timeout:      req.Timeout,
@@ -349,6 +363,7 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 	result := map[string]interface{}{
 		"task_id":    task.ID,
 		"status":     task.Status,
+		"engine":     task.Engine,
 		"work_dir":   task.WorkDir,
 		"created_at": task.CreatedAt,
 	}

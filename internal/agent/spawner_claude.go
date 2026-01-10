@@ -1,4 +1,4 @@
-// Package agent handles spawning and managing Copilot CLI processes.
+// Package agent handles spawning and managing CLI agent processes.
 package agent
 
 import (
@@ -18,53 +18,61 @@ import (
 	"github.com/sevir/mesnada/pkg/models"
 )
 
-const (
-	defaultLogDir    = ".mesnada/logs"
-	outputTailLines  = 50
-	maxOutputCapture = 1024 * 1024 // 1MB max output capture
-)
-
-// CopilotSpawner manages Copilot CLI process spawning.
-type CopilotSpawner struct {
+// ClaudeSpawner manages Claude CLI process spawning.
+type ClaudeSpawner struct {
 	logDir     string
-	processes  map[string]*Process
+	processes  map[string]*ClaudeProcess
 	mu         sync.RWMutex
 	onComplete func(task *models.Task)
 }
 
-// Process represents a running Copilot CLI process.
-type Process struct {
-	cmd     *exec.Cmd
-	task    *models.Task
-	output  *strings.Builder
-	logFile *os.File
-	cancel  context.CancelFunc
-	done    chan struct{}
+// ClaudeProcess represents a running Claude CLI process.
+type ClaudeProcess struct {
+	cmd        *exec.Cmd
+	task       *models.Task
+	output     *strings.Builder
+	logFile    *os.File
+	cancel     context.CancelFunc
+	done       chan struct{}
+	parser     *ClaudeOutputParser
+	mcpTempDir string // Temp dir for converted MCP config
 }
 
-// NewCopilotSpawner creates a new Copilot CLI agent spawner.
-func NewCopilotSpawner(logDir string, onComplete func(task *models.Task)) *CopilotSpawner {
+// NewClaudeSpawner creates a new Claude CLI agent spawner.
+func NewClaudeSpawner(logDir string, onComplete func(task *models.Task)) *ClaudeSpawner {
 	if logDir == "" {
 		home, _ := os.UserHomeDir()
 		logDir = filepath.Join(home, defaultLogDir)
 	}
-	// Ensure logDir is absolute so task.LogFile is a full path.
 	if abs, err := filepath.Abs(logDir); err == nil {
 		logDir = abs
 	}
 	os.MkdirAll(logDir, 0755)
 
-	return &CopilotSpawner{
+	return &ClaudeSpawner{
 		logDir:     logDir,
-		processes:  make(map[string]*Process),
+		processes:  make(map[string]*ClaudeProcess),
 		onComplete: onComplete,
 	}
 }
 
-// Spawn starts a new Copilot CLI agent.
-func (s *CopilotSpawner) Spawn(ctx context.Context, task *models.Task) error {
+// Spawn starts a new Claude CLI agent.
+func (s *ClaudeSpawner) Spawn(ctx context.Context, task *models.Task) error {
+	// Convert MCP config if provided
+	var mcpConfigPath string
+	var mcpTempDir string
+	if task.MCPConfig != "" {
+		var err error
+		mcpTempDir = filepath.Join(s.logDir, "claude-mcp", task.ID)
+		mcpConfigPath, err = ConvertMCPConfigForTask(task.MCPConfig, task.ID, s.logDir)
+		if err != nil {
+			log.Printf("Warning: failed to convert MCP config for Claude CLI: %v", err)
+			// Continue without MCP config
+		}
+	}
+
 	// Build command arguments
-	args := s.buildArgs(task)
+	args := s.buildArgs(task, mcpConfigPath)
 
 	// Create cancellable context
 	procCtx, cancel := context.WithCancel(ctx)
@@ -72,13 +80,12 @@ func (s *CopilotSpawner) Spawn(ctx context.Context, task *models.Task) error {
 		procCtx, cancel = context.WithTimeout(ctx, time.Duration(task.Timeout))
 	}
 
-	// Create command
-	cmd := exec.CommandContext(procCtx, "copilot", args...)
+	// Create command - use 'claude' CLI
+	cmd := exec.CommandContext(procCtx, "claude", args...)
 	cmd.Dir = task.WorkDir
 
 	// Set up environment
 	cmd.Env = append(os.Environ(),
-		"COPILOT_ALLOW_ALL=1",
 		"NO_COLOR=1",
 	)
 
@@ -93,14 +100,6 @@ func (s *CopilotSpawner) Spawn(ctx context.Context, task *models.Task) error {
 
 	// Set up output capture
 	output := &strings.Builder{}
-
-	// Set up stdin pipe to send the prompt
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		cancel()
-		logFile.Close()
-		return fmt.Errorf("failed to create stdin pipe: %w", err)
-	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -120,14 +119,8 @@ func (s *CopilotSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	if err := cmd.Start(); err != nil {
 		cancel()
 		logFile.Close()
-		return fmt.Errorf("failed to start copilot: %w", err)
+		return fmt.Errorf("failed to start claude: %w", err)
 	}
-
-	// Send the prompt to stdin and close it
-	go func() {
-		defer stdin.Close()
-		stdin.Write([]byte(task.Prompt))
-	}()
 
 	task.PID = cmd.Process.Pid
 	now := time.Now()
@@ -135,7 +128,7 @@ func (s *CopilotSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	task.Status = models.TaskStatusRunning
 
 	log.Printf(
-		"task_event=started task_id=%s status=%s pid=%d log_file=%q work_dir=%q model=%q",
+		"task_event=started task_id=%s status=%s pid=%d log_file=%q work_dir=%q model=%q engine=claude",
 		task.ID,
 		task.Status,
 		task.PID,
@@ -144,13 +137,15 @@ func (s *CopilotSpawner) Spawn(ctx context.Context, task *models.Task) error {
 		task.Model,
 	)
 
-	proc := &Process{
-		cmd:     cmd,
-		task:    task,
-		output:  output,
-		logFile: logFile,
-		cancel:  cancel,
-		done:    make(chan struct{}),
+	proc := &ClaudeProcess{
+		cmd:        cmd,
+		task:       task,
+		output:     output,
+		logFile:    logFile,
+		cancel:     cancel,
+		done:       make(chan struct{}),
+		parser:     NewClaudeOutputParser(),
+		mcpTempDir: mcpTempDir,
 	}
 
 	s.mu.Lock()
@@ -166,67 +161,99 @@ func (s *CopilotSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	return nil
 }
 
-func (s *CopilotSpawner) buildArgs(task *models.Task) []string {
+func (s *ClaudeSpawner) buildArgs(task *models.Task, mcpConfigPath string) []string {
 	// Prepend task_id to the prompt
 	promptWithTaskID := fmt.Sprintf("You are the task_id: %s\n\n%s", task.ID, task.Prompt)
 
 	args := []string{
-		"--allow-all-tools",
-		"--no-color",
-		"--no-custom-instructions",
+		"-p", // Print/headless mode
+		"--output-format", "stream-json", // JSON output for parsing
+		"--dangerously-skip-permissions", // Skip permission prompts for automation
+		"--verbose", // Full output
 	}
 
 	if task.Model != "" {
 		args = append(args, "--model", task.Model)
 	}
 
-	if task.MCPConfig != "" {
-		args = append(args, "--additional-mcp-config", task.MCPConfig)
+	if mcpConfigPath != "" {
+		args = append(args, "--mcp-config", mcpConfigPath)
 	}
 
 	args = append(args, task.ExtraArgs...)
 
-	// Store the modified prompt for stdin
+	// Add the prompt as the final argument
+	args = append(args, promptWithTaskID)
+
+	// Store the modified prompt
 	task.Prompt = promptWithTaskID
 
 	return args
 }
 
-func (s *CopilotSpawner) captureOutput(proc *Process, stdout, stderr io.ReadCloser) {
+func (s *ClaudeSpawner) captureOutput(proc *ClaudeProcess, stdout, stderr io.ReadCloser) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	capture := func(r io.ReadCloser, prefix string) {
+	// Capture stdout (JSON events) and convert to text
+	go func() {
 		defer wg.Done()
-		scanner := bufio.NewScanner(r)
+		scanner := bufio.NewScanner(stdout)
+		buf := make([]byte, 0, 64*1024)
+		scanner.Buffer(buf, 1024*1024)
+
+		for scanner.Scan() {
+			jsonLine := scanner.Text()
+
+			// Parse JSON and convert to text
+			textLine := proc.parser.ParseLine(jsonLine)
+
+			// Write parsed text to log file
+			if textLine != "" {
+				fmt.Fprint(proc.logFile, textLine)
+			}
+
+			// Capture to memory (with limit)
+			if proc.output.Len() < maxOutputCapture {
+				if textLine != "" {
+					proc.output.WriteString(textLine)
+				}
+			}
+		}
+	}()
+
+	// Capture stderr as-is
+	go func() {
+		defer wg.Done()
+		scanner := bufio.NewScanner(stderr)
 		buf := make([]byte, 0, 64*1024)
 		scanner.Buffer(buf, 1024*1024)
 
 		for scanner.Scan() {
 			line := scanner.Text()
+			fmt.Fprintf(proc.logFile, "[stderr] %s\n", line)
 
-			// Write to log file
-			fmt.Fprintf(proc.logFile, "%s%s\n", prefix, line)
-
-			// Capture to memory (with limit)
 			if proc.output.Len() < maxOutputCapture {
+				proc.output.WriteString("[stderr] ")
 				proc.output.WriteString(line)
 				proc.output.WriteString("\n")
 			}
 		}
-	}
-
-	go capture(stdout, "")
-	go capture(stderr, "[stderr] ")
+	}()
 
 	wg.Wait()
 }
 
-func (s *CopilotSpawner) waitForCompletion(proc *Process) {
+func (s *ClaudeSpawner) waitForCompletion(proc *ClaudeProcess) {
 	defer close(proc.done)
 	defer proc.logFile.Close()
 
 	err := proc.cmd.Wait()
+
+	// Clean up temp MCP config
+	if proc.mcpTempDir != "" {
+		os.RemoveAll(proc.mcpTempDir)
+	}
 
 	now := time.Now()
 	proc.task.CompletedAt = &now
@@ -236,7 +263,6 @@ func (s *CopilotSpawner) waitForCompletion(proc *Process) {
 	explicitStop := proc.task.Status == models.TaskStatusCancelled || proc.task.Status == models.TaskStatusPaused
 
 	if err != nil {
-		// Preserve explicit stop statuses (cancelled/paused) as the final status.
 		if explicitStop {
 			if exitErr, ok := err.(*exec.ExitError); ok {
 				code := exitErr.ExitCode()
@@ -268,7 +294,7 @@ func (s *CopilotSpawner) waitForCompletion(proc *Process) {
 	}
 }
 
-func (s *CopilotSpawner) getTail(output string, lines int) string {
+func (s *ClaudeSpawner) getTail(output string, lines int) string {
 	allLines := strings.Split(output, "\n")
 	if len(allLines) <= lines {
 		return output
@@ -277,7 +303,7 @@ func (s *CopilotSpawner) getTail(output string, lines int) string {
 }
 
 // Cancel stops a running agent.
-func (s *CopilotSpawner) Cancel(taskID string) error {
+func (s *ClaudeSpawner) Cancel(taskID string) error {
 	s.mu.RLock()
 	proc, exists := s.processes[taskID]
 	s.mu.RUnlock()
@@ -288,14 +314,11 @@ func (s *CopilotSpawner) Cancel(taskID string) error {
 
 	proc.cancel()
 
-	// Send SIGTERM first
 	if proc.cmd.Process != nil {
 		proc.cmd.Process.Signal(syscall.SIGTERM)
 
-		// Wait briefly, then force kill
 		select {
 		case <-proc.done:
-			// Process exited gracefully
 		case <-time.After(5 * time.Second):
 			proc.cmd.Process.Kill()
 		}
@@ -307,7 +330,7 @@ func (s *CopilotSpawner) Cancel(taskID string) error {
 }
 
 // Pause stops a running agent without marking it as cancelled.
-func (s *CopilotSpawner) Pause(taskID string) error {
+func (s *ClaudeSpawner) Pause(taskID string) error {
 	s.mu.RLock()
 	proc, exists := s.processes[taskID]
 	s.mu.RUnlock()
@@ -318,14 +341,11 @@ func (s *CopilotSpawner) Pause(taskID string) error {
 
 	proc.cancel()
 
-	// Send SIGTERM first
 	if proc.cmd.Process != nil {
 		proc.cmd.Process.Signal(syscall.SIGTERM)
 
-		// Wait briefly, then force kill
 		select {
 		case <-proc.done:
-			// Process exited gracefully
 		case <-time.After(5 * time.Second):
 			proc.cmd.Process.Kill()
 		}
@@ -336,16 +356,8 @@ func (s *CopilotSpawner) Pause(taskID string) error {
 	return nil
 }
 
-// GetProcess returns information about a running process.
-func (s *CopilotSpawner) GetProcess(taskID string) (*Process, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	proc, exists := s.processes[taskID]
-	return proc, exists
-}
-
 // IsRunning checks if a task is currently running.
-func (s *CopilotSpawner) IsRunning(taskID string) bool {
+func (s *ClaudeSpawner) IsRunning(taskID string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	_, exists := s.processes[taskID]
@@ -353,13 +365,13 @@ func (s *CopilotSpawner) IsRunning(taskID string) bool {
 }
 
 // Wait blocks until a task completes or context is cancelled.
-func (s *CopilotSpawner) Wait(ctx context.Context, taskID string) error {
+func (s *ClaudeSpawner) Wait(ctx context.Context, taskID string) error {
 	s.mu.RLock()
 	proc, exists := s.processes[taskID]
 	s.mu.RUnlock()
 
 	if !exists {
-		return nil // Already completed
+		return nil
 	}
 
 	select {
@@ -371,16 +383,16 @@ func (s *CopilotSpawner) Wait(ctx context.Context, taskID string) error {
 }
 
 // RunningCount returns the number of currently running processes.
-func (s *CopilotSpawner) RunningCount() int {
+func (s *ClaudeSpawner) RunningCount() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.processes)
 }
 
 // Shutdown cancels all running processes.
-func (s *CopilotSpawner) Shutdown() {
+func (s *ClaudeSpawner) Shutdown() {
 	s.mu.Lock()
-	procs := make([]*Process, 0, len(s.processes))
+	procs := make([]*ClaudeProcess, 0, len(s.processes))
 	for _, p := range s.processes {
 		procs = append(procs, p)
 	}
@@ -393,7 +405,6 @@ func (s *CopilotSpawner) Shutdown() {
 		}
 	}
 
-	// Wait for all to finish
 	for _, proc := range procs {
 		select {
 		case <-proc.done:

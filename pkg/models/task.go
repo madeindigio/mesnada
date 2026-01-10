@@ -17,6 +17,26 @@ const (
 	TaskStatusCancelled TaskStatus = "cancelled"
 )
 
+// Engine represents the CLI engine to use for spawning agents.
+type Engine string
+
+const (
+	// EngineCopilot uses GitHub Copilot CLI (default).
+	EngineCopilot Engine = "copilot"
+	// EngineClaude uses Anthropic Claude CLI.
+	EngineClaude Engine = "claude"
+)
+
+// ValidEngine checks if an engine is valid.
+func ValidEngine(e Engine) bool {
+	return e == EngineCopilot || e == EngineClaude || e == ""
+}
+
+// DefaultEngine returns the default engine.
+func DefaultEngine() Engine {
+	return EngineCopilot
+}
+
 // TaskProgress represents the progress of a task.
 type TaskProgress struct {
 	Percentage  int       `json:"percentage"`
@@ -24,12 +44,13 @@ type TaskProgress struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-// Task represents a Copilot CLI agent task.
+// Task represents a CLI agent task.
 type Task struct {
 	ID           string        `json:"id"`
 	Prompt       string        `json:"prompt"`
 	WorkDir      string        `json:"work_dir"`
 	Status       TaskStatus    `json:"status"`
+	Engine       Engine        `json:"engine,omitempty"`
 	PID          int           `json:"pid,omitempty"`
 	Output       string        `json:"output,omitempty"`
 	OutputTail   string        `json:"output_tail,omitempty"`
@@ -133,6 +154,7 @@ type SpawnRequest struct {
 	Prompt       string   `json:"prompt"`
 	WorkDir      string   `json:"work_dir,omitempty"`
 	Model        string   `json:"model,omitempty"`
+	Engine       Engine   `json:"engine,omitempty"`
 	Dependencies []string `json:"dependencies,omitempty"`
 	Tags         []string `json:"tags,omitempty"`
 	Priority     int      `json:"priority,omitempty"`
