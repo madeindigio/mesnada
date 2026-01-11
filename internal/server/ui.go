@@ -262,6 +262,10 @@ func engineClass(engine models.Engine) string {
 	switch engine {
 	case models.EngineClaude:
 		return "engine-claude"
+	case models.EngineGemini:
+		return "engine-gemini"
+	case models.EngineOpenCode:
+		return "engine-opencode"
 	case models.EngineCopilot:
 		return "engine-copilot"
 	default:

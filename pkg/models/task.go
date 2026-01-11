@@ -25,11 +25,15 @@ const (
 	EngineCopilot Engine = "copilot"
 	// EngineClaude uses Anthropic Claude CLI.
 	EngineClaude Engine = "claude"
+	// EngineGemini uses Google Gemini CLI.
+	EngineGemini Engine = "gemini"
+	// EngineOpenCode uses OpenCode.ai CLI.
+	EngineOpenCode Engine = "opencode"
 )
 
 // ValidEngine checks if an engine is valid.
 func ValidEngine(e Engine) bool {
-	return e == EngineCopilot || e == EngineClaude || e == ""
+	return e == EngineCopilot || e == EngineClaude || e == EngineGemini || e == EngineOpenCode || e == ""
 }
 
 // DefaultEngine returns the default engine.
