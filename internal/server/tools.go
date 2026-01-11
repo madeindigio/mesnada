@@ -87,6 +87,16 @@ func (s *Server) getToolDefinitions() []Tool {
 						"items":       map[string]string{"type": "string"},
 						"description": "Additional command-line arguments for the CLI engine",
 					},
+					"include_dependency_logs": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Include logs from dependency tasks in the prompt. When true, the last N lines of logs from all dependency tasks will be added to the prompt with the header '===LAST TASK RESULTS==='",
+						"default":     false,
+					},
+					"dependency_log_lines": map[string]interface{}{
+						"type":        "integer",
+						"description": "Number of lines to include from each dependency task log (default: 100)",
+						"default":     100,
+					},
 				},
 				"required": []string{"prompt"},
 			},
@@ -311,16 +321,18 @@ func (s *Server) getToolDefinitions() []Tool {
 
 func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req struct {
-		Prompt       string   `json:"prompt"`
-		WorkDir      string   `json:"work_dir"`
-		Engine       string   `json:"engine"`
-		Model        string   `json:"model"`
-		Background   *bool    `json:"background"`
-		Timeout      string   `json:"timeout"`
-		Dependencies []string `json:"dependencies"`
-		Tags         []string `json:"tags"`
-		MCPConfig    string   `json:"mcp_config"`
-		ExtraArgs    []string `json:"extra_args"`
+		Prompt                string   `json:"prompt"`
+		WorkDir               string   `json:"work_dir"`
+		Engine                string   `json:"engine"`
+		Model                 string   `json:"model"`
+		Background            *bool    `json:"background"`
+		Timeout               string   `json:"timeout"`
+		Dependencies          []string `json:"dependencies"`
+		Tags                  []string `json:"tags"`
+		MCPConfig             string   `json:"mcp_config"`
+		ExtraArgs             []string `json:"extra_args"`
+		IncludeDependencyLogs *bool    `json:"include_dependency_logs"`
+		DependencyLogLines    *int     `json:"dependency_log_lines"`
 	}
 
 	if err := json.Unmarshal(params, &req); err != nil {
@@ -343,17 +355,30 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 		background = *req.Background
 	}
 
+	// Default values for dependency logs
+	includeDependencyLogs := false
+	if req.IncludeDependencyLogs != nil {
+		includeDependencyLogs = *req.IncludeDependencyLogs
+	}
+
+	dependencyLogLines := 100
+	if req.DependencyLogLines != nil {
+		dependencyLogLines = *req.DependencyLogLines
+	}
+
 	task, err := s.orchestrator.Spawn(ctx, models.SpawnRequest{
-		Prompt:       req.Prompt,
-		WorkDir:      req.WorkDir,
-		Engine:       engine,
-		Model:        req.Model,
-		Background:   background,
-		Timeout:      req.Timeout,
-		Dependencies: req.Dependencies,
-		Tags:         req.Tags,
-		MCPConfig:    req.MCPConfig,
-		ExtraArgs:    req.ExtraArgs,
+		Prompt:                req.Prompt,
+		WorkDir:               req.WorkDir,
+		Engine:                engine,
+		Model:                 req.Model,
+		Background:            background,
+		Timeout:               req.Timeout,
+		Dependencies:          req.Dependencies,
+		Tags:                  req.Tags,
+		MCPConfig:             req.MCPConfig,
+		ExtraArgs:             req.ExtraArgs,
+		IncludeDependencyLogs: includeDependencyLogs,
+		DependencyLogLines:    dependencyLogLines,
 	})
 
 	if err != nil {

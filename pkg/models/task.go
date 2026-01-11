@@ -151,17 +151,19 @@ func truncateString(s string, maxLen int) string {
 
 // SpawnRequest represents a request to spawn a new agent.
 type SpawnRequest struct {
-	Prompt       string   `json:"prompt"`
-	WorkDir      string   `json:"work_dir,omitempty"`
-	Model        string   `json:"model,omitempty"`
-	Engine       Engine   `json:"engine,omitempty"`
-	Dependencies []string `json:"dependencies,omitempty"`
-	Tags         []string `json:"tags,omitempty"`
-	Priority     int      `json:"priority,omitempty"`
-	Timeout      string   `json:"timeout,omitempty"`
-	MCPConfig    string   `json:"mcp_config,omitempty"`
-	ExtraArgs    []string `json:"extra_args,omitempty"`
-	Background   bool     `json:"background"`
+	Prompt                string   `json:"prompt"`
+	WorkDir               string   `json:"work_dir,omitempty"`
+	Model                 string   `json:"model,omitempty"`
+	Engine                Engine   `json:"engine,omitempty"`
+	Dependencies          []string `json:"dependencies,omitempty"`
+	Tags                  []string `json:"tags,omitempty"`
+	Priority              int      `json:"priority,omitempty"`
+	Timeout               string   `json:"timeout,omitempty"`
+	MCPConfig             string   `json:"mcp_config,omitempty"`
+	ExtraArgs             []string `json:"extra_args,omitempty"`
+	Background            bool     `json:"background"`
+	IncludeDependencyLogs bool     `json:"include_dependency_logs,omitempty"`
+	DependencyLogLines    int      `json:"dependency_log_lines,omitempty"`
 }
 
 // WaitRequest represents a request to wait for task completion.

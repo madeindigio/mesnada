@@ -58,3 +58,4 @@ orchestrator:
   # Use @<path> to reference a JSON file relative to the task working directory.
   # Example: @.github/mcp-config.json
   default_mcp_config: "@.github/mcp-config.json"
+  default_engine: "copilot"

@@ -147,6 +147,49 @@ func (o *Orchestrator) startTask(task *models.Task) {
 	o.store.Save(task)
 }
 
+// getDependencyLogs retrieves the last N lines from the log files of dependency tasks.
+func (o *Orchestrator) getDependencyLogs(dependencies []string, numLines int) (string, error) {
+	if len(dependencies) == 0 {
+		return "", nil
+	}
+
+	var logsBuilder strings.Builder
+	logsBuilder.WriteString("===LAST TASK RESULTS===\n\n")
+
+	for _, depID := range dependencies {
+		dep, err := o.store.Get(depID)
+		if err != nil {
+			log.Printf("Warning: failed to get dependency task %s: %v", depID, err)
+			continue
+		}
+
+		if dep.LogFile == "" {
+			log.Printf("Warning: dependency task %s has no log file", depID)
+			continue
+		}
+
+		// Read the log file
+		content, err := os.ReadFile(dep.LogFile)
+		if err != nil {
+			log.Printf("Warning: failed to read log file %s: %v", dep.LogFile, err)
+			continue
+		}
+
+		// Split into lines and get the last N lines
+		lines := strings.Split(string(content), "\n")
+		startIdx := 0
+		if len(lines) > numLines {
+			startIdx = len(lines) - numLines
+		}
+
+		logsBuilder.WriteString(fmt.Sprintf("--- Task: %s ---\n", depID))
+		logsBuilder.WriteString(strings.Join(lines[startIdx:], "\n"))
+		logsBuilder.WriteString("\n\n")
+	}
+
+	return logsBuilder.String(), nil
+}
+
 // Spawn creates and optionally starts a new agent task.
 func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*models.Task, error) {
 	// Validate work directory
@@ -177,9 +220,25 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 		engine = o.defaultEngine
 	}
 
+	// Prepare the prompt with dependency logs if requested
+	prompt := req.Prompt
+	if req.IncludeDependencyLogs && len(req.Dependencies) > 0 {
+		logLines := req.DependencyLogLines
+		if logLines <= 0 {
+			logLines = 100
+		}
+
+		dependencyLogs, err := o.getDependencyLogs(req.Dependencies, logLines)
+		if err != nil {
+			log.Printf("Warning: failed to get dependency logs: %v", err)
+		} else if dependencyLogs != "" {
+			prompt = prompt + "\n\n" + dependencyLogs
+		}
+	}
+
 	task := &models.Task{
 		ID:           generateID(),
-		Prompt:       req.Prompt,
+		Prompt:       prompt,
 		WorkDir:      workDir,
 		Status:       models.TaskStatusPending,
 		Engine:       engine,
