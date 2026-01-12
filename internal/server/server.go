@@ -1,13 +1,16 @@
-// Package server implements the MCP server with HTTP Streamable transport.
+// Package server implements the MCP server with HTTP Streamable and stdio transports.
 package server
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -20,7 +23,7 @@ const (
 	mcpVersion     = "2024-11-05"
 )
 
-// Server is the MCP HTTP Streamable server.
+// Server is the MCP HTTP Streamable and stdio server.
 type Server struct {
 	orchestrator *orchestrator.Orchestrator
 	addr         string
@@ -30,6 +33,7 @@ type Server struct {
 	sessions     map[string]*Session
 	sessionMu    sync.RWMutex
 	tools        map[string]ToolHandler
+	useStdio     bool
 
 	uiOnce   sync.Once
 	uiTpl    *template.Template
@@ -77,6 +81,7 @@ type Config struct {
 	Orchestrator *orchestrator.Orchestrator
 	Version      string
 	Commit       string
+	UseStdio     bool
 }
 
 // New creates a new MCP server.
@@ -88,23 +93,27 @@ func New(cfg Config) *Server {
 		commit:       cfg.Commit,
 		sessions:     make(map[string]*Session),
 		tools:        make(map[string]ToolHandler),
+		useStdio:     cfg.UseStdio,
 	}
 
 	s.registerTools()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/mcp", s.handleMCP)
-	mux.HandleFunc("/mcp/sse", s.handleSSE)
-	mux.HandleFunc("/health", s.handleHealth)
+	// Only set up HTTP server if not using stdio
+	if !cfg.UseStdio {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/mcp", s.handleMCP)
+		mux.HandleFunc("/mcp/sse", s.handleSSE)
+		mux.HandleFunc("/health", s.handleHealth)
 
-	// UI + REST API are handled by Gin, while MCP endpoints remain on the stdlib mux.
-	mux.Handle("/", s.newGinEngine())
+		// UI + REST API are handled by Gin, while MCP endpoints remain on the stdlib mux.
+		mux.Handle("/", s.newGinEngine())
 
-	s.httpServer = &http.Server{
-		Addr:         cfg.Addr,
-		Handler:      s.corsMiddleware(mux),
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 0, // No timeout for SSE
+		s.httpServer = &http.Server{
+			Addr:         cfg.Addr,
+			Handler:      s.corsMiddleware(mux),
+			ReadTimeout:  30 * time.Second,
+			WriteTimeout: 0, // No timeout for SSE
+		}
 	}
 
 	return s
@@ -126,15 +135,73 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// Start starts the HTTP server.
+// Start starts the HTTP server or stdio loop.
 func (s *Server) Start() error {
+	if s.useStdio {
+		return s.runStdio()
+	}
 	log.Printf("MCP server starting on %s", s.addr)
 	return s.httpServer.ListenAndServe()
 }
 
 // Shutdown gracefully shuts down the server.
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.useStdio {
+		// For stdio, just return nil as there's no server to shutdown
+		return nil
+	}
 	return s.httpServer.Shutdown(ctx)
+}
+
+// runStdio runs the MCP server in stdio mode.
+func (s *Server) runStdio() error {
+	scanner := bufio.NewScanner(os.Stdin)
+	encoder := json.NewEncoder(os.Stdout)
+
+	// Create a dummy session for stdio
+	session := &Session{
+		ID:        "stdio",
+		CreatedAt: time.Now(),
+		events:    make(chan []byte, 100),
+	}
+
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+
+		var req JSONRPCRequest
+		if err := json.Unmarshal(line, &req); err != nil {
+			s.writeStdioError(encoder, nil, -32700, "Parse error", err.Error())
+			continue
+		}
+
+		response := s.handleRequest(context.Background(), session, &req)
+		if err := encoder.Encode(response); err != nil {
+			log.Printf("Error encoding response: %v", err)
+			return err
+		}
+	}
+
+	if err := scanner.Err(); err != nil && err != io.EOF {
+		return fmt.Errorf("error reading from stdin: %w", err)
+	}
+
+	return nil
+}
+
+// writeStdioError writes an error response to stdout in stdio mode.
+func (s *Server) writeStdioError(encoder *json.Encoder, id interface{}, code int, message, data string) {
+	encoder.Encode(&JSONRPCResponse{
+		JSONRPC: jsonRPCVersion,
+		ID:      id,
+		Error: &JSONRPCError{
+			Code:    code,
+			Message: message,
+			Data:    data,
+		},
+	})
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

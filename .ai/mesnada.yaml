@@ -42,6 +42,12 @@ models:
   - id: "gemini-3-pro-preview"
     description: "Use this model for multimodal tasks and big context requirements"
 
+  - id: "sonnet"
+    description: "Only for Claude Code engine, for general coding tasks"
+
+  - id: "opus"
+    description: "Only for Claude Code engine, the best senior thinking model for complex tasks"
+
 # Server configuration
 server:
   host: "127.0.0.1"

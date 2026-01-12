@@ -32,6 +32,7 @@ func main() {
 		maxParallel = flag.Int("max-parallel", 0, "Maximum parallel agents")
 		showVersion = flag.Bool("version", false, "Show version and exit")
 		initConfig  = flag.Bool("init", false, "Initialize default config and exit")
+		useStdio    = flag.Bool("stdio", false, "Use stdio transport instead of HTTP")
 	)
 	flag.Parse()
 
@@ -89,6 +90,7 @@ func main() {
 		Orchestrator: orch,
 		Version:      version,
 		Commit:       commit,
+		UseStdio:     *useStdio,
 	})
 
 	// Handle shutdown
@@ -116,11 +118,15 @@ func main() {
 	}()
 
 	// Print startup info
-	log.Printf("mesnada %s starting", version)
-	log.Printf("UI endpoint:  http://%s/ui", cfg.Address())
-	log.Printf("MCP endpoint: http://%s/mcp", cfg.Address())
-	log.Printf("SSE endpoint: http://%s/mcp/sse", cfg.Address())
-	log.Printf("Health check: http://%s/health", cfg.Address())
+	if *useStdio {
+		log.Printf("mesnada %s starting in stdio mode", version)
+	} else {
+		log.Printf("mesnada %s starting", version)
+		log.Printf("UI endpoint:  http://%s/ui", cfg.Address())
+		log.Printf("MCP endpoint: http://%s/mcp", cfg.Address())
+		log.Printf("SSE endpoint: http://%s/mcp/sse", cfg.Address())
+		log.Printf("Health check: http://%s/health", cfg.Address())
+	}
 
 	// Start server
 	if err := srv.Start(); err != nil {

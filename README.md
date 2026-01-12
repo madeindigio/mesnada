@@ -69,7 +69,7 @@ cp config.example.yaml ~/.mesnada/config.yaml
 ### Start the server
 
 ```bash
-# With default configuration (port 8765)
+# With default configuration (HTTP mode on port 8765)
 ./mesnada
 
 # With custom port
@@ -77,6 +77,9 @@ cp config.example.yaml ~/.mesnada/config.yaml
 
 # With custom configuration
 ./mesnada --config ~/.mesnada/config.json
+
+# In stdio mode (for MCP clients that use stdio transport)
+./mesnada --stdio
 ```
 
 ### Command line options
@@ -88,11 +91,14 @@ cp config.example.yaml ~/.mesnada/config.yaml
 --store        Path to the tasks file
 --log-dir      Directory for agent logs
 --max-parallel Maximum parallel agents
+--stdio        Use stdio transport instead of HTTP
 --version      Show version
 --init         Initialize default configuration
 ```
 
-## MCP Configuration for VSCode Copilot
+## MCP Configuration
+
+### HTTP Transport (Default)
 
 Add the following configuration to your `~/.copilot/mcp-config.json`:
 
@@ -111,6 +117,34 @@ Or to use it directly with Copilot CLI:
 
 ```bash
 copilot --additional-mcp-config '{"mcpServers":{"mesnada":{"type":"http","url":"http://127.0.0.1:8765/mcp"}}}'
+```
+
+### Stdio Transport
+
+For MCP clients that support stdio transport (like Claude Desktop), add this to your MCP settings:
+
+```json
+{
+  "mcpServers": {
+    "mesnada": {
+      "command": "/path/to/mesnada",
+      "args": ["--stdio"]
+    }
+  }
+}
+```
+
+Example for Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+
+```json
+{
+  "mcpServers": {
+    "mesnada": {
+      "command": "/usr/local/bin/mesnada",
+      "args": ["--stdio", "--config", "~/.mesnada/config.yaml"]
+    }
+  }
+}
 ```
 
 ## Available MCP tools

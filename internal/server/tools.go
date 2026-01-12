@@ -36,7 +36,7 @@ func (s *Server) getToolDefinitions() []Tool {
 	return []Tool{
 		{
 			Name:        "spawn_agent",
-			Description: "Spawn a new CLI agent to execute a task. Supports multiple engines: 'copilot' (GitHub Copilot CLI) or 'claude' (Anthropic Claude CLI). The agent runs in the specified working directory with full tool access. Use background=true for long-running tasks.",
+			Description: "Spawn a new CLI agent to execute a task. Supports multiple engines: 'copilot' (GitHub Copilot CLI), 'claude' (Anthropic Claude CLI), 'gemini' (Google Gemini CLI), or 'opencode' (OpenCode.ai CLI). The agent runs in the specified working directory with full tool access. Use background=true for long-running tasks.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -50,8 +50,8 @@ func (s *Server) getToolDefinitions() []Tool {
 					},
 					"engine": map[string]interface{}{
 						"type":        "string",
-						"description": "CLI engine to use: 'copilot' (GitHub Copilot CLI, default) or 'claude' (Anthropic Claude CLI)",
-						"enum":        []string{"copilot", "claude"},
+						"description": "CLI engine to use: 'copilot' (GitHub Copilot CLI, default), 'claude' (Anthropic Claude CLI), 'gemini' (Google Gemini CLI), or 'opencode' (OpenCode.ai CLI)",
+						"enum":        []string{"copilot", "claude", "gemini", "opencode"},
 						"default":     "copilot",
 					},
 					"model": map[string]interface{}{
@@ -346,7 +346,7 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 	// Validate engine if provided
 	engine := models.Engine(req.Engine)
 	if req.Engine != "" && !models.ValidEngine(engine) {
-		return nil, fmt.Errorf("invalid engine: %s (valid: copilot, claude)", req.Engine)
+		return nil, fmt.Errorf("invalid engine: %s (valid: copilot, claude, gemini, opencode)", req.Engine)
 	}
 
 	// Default to background execution
