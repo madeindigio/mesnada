@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sevir/mesnada/internal/config"
 	"github.com/sevir/mesnada/internal/orchestrator"
 )
 
@@ -34,6 +35,7 @@ type Server struct {
 	sessionMu    sync.RWMutex
 	tools        map[string]ToolHandler
 	useStdio     bool
+	config       *config.Config
 
 	uiOnce   sync.Once
 	uiTpl    *template.Template
@@ -82,6 +84,7 @@ type Config struct {
 	Version      string
 	Commit       string
 	UseStdio     bool
+	AppConfig    *config.Config
 }
 
 // New creates a new MCP server.
@@ -94,6 +97,7 @@ func New(cfg Config) *Server {
 		sessions:     make(map[string]*Session),
 		tools:        make(map[string]ToolHandler),
 		useStdio:     cfg.UseStdio,
+		config:       cfg.AppConfig,
 	}
 
 	s.registerTools()

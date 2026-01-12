@@ -33,6 +33,9 @@ func (s *Server) registerTools() {
 }
 
 func (s *Server) getToolDefinitions() []Tool {
+	// Build model enum from configuration (all models from all engines + global)
+	modelEnum := s.getAllModelIDs()
+
 	return []Tool{
 		{
 			Name:        "spawn_agent",
@@ -56,8 +59,8 @@ func (s *Server) getToolDefinitions() []Tool {
 					},
 					"model": map[string]interface{}{
 						"type":        "string",
-						"description": "AI model to use (e.g., claude-sonnet-4, gpt-5.1-codex)",
-						"enum":        []string{"claude-sonnet-4.5", "claude-haiku-4.5", "claude-opus-4.5", "claude-sonnet-4", "gpt-5.1-codex-max", "gpt-5.1-codex", "gpt-5.2", "gpt-5.1", "gpt-5", "gpt-5.1-codex-mini", "gpt-5-mini", "gpt-4.1", "gemini-3-pro-preview"},
+						"description": "AI model to use (e.g., claude-sonnet-4, gpt-5.1-codex). Note: Model availability depends on the selected engine.",
+						"enum":        modelEnum,
 					},
 					"background": map[string]interface{}{
 						"type":        "boolean",
@@ -234,7 +237,7 @@ func (s *Server) getToolDefinitions() []Tool {
 					"model": map[string]interface{}{
 						"type":        "string",
 						"description": "AI model to use (optional; defaults to previous task model)",
-						"enum":        []string{"claude-sonnet-4.5", "claude-haiku-4.5", "claude-opus-4.5", "claude-sonnet-4", "gpt-5.1-codex-max", "gpt-5.1-codex", "gpt-5.2", "gpt-5.1", "gpt-5", "gpt-5.1-codex-mini", "gpt-5-mini", "gpt-4.1", "gemini-3-pro-preview"},
+						"enum":        modelEnum,
 					},
 					"background": map[string]interface{}{
 						"type":        "boolean",
@@ -347,6 +350,19 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 	engine := models.Engine(req.Engine)
 	if req.Engine != "" && !models.ValidEngine(engine) {
 		return nil, fmt.Errorf("invalid engine: %s (valid: copilot, claude, gemini, opencode)", req.Engine)
+	}
+
+	// Use default engine if not specified
+	if engine == "" {
+		engine = models.Engine(s.getDefaultEngine())
+	}
+
+	// Validate model for the specified engine
+	if req.Model != "" && s.config != nil {
+		if !s.config.ValidateModelForEngine(string(engine), req.Model) {
+			availableModels := s.config.GetModelIDsForEngine(string(engine))
+			return nil, fmt.Errorf("invalid model '%s' for engine '%s'. Available models: %v", req.Model, engine, availableModels)
+		}
 	}
 
 	// Default to background execution
@@ -724,4 +740,50 @@ func (s *Server) toolSetProgress(ctx context.Context, params json.RawMessage) (i
 		"description": req.Description,
 		"updated":     true,
 	}, nil
+}
+
+// getAllModelIDs returns a deduplicated list of all model IDs from config.
+// This includes models from all engines plus the global models list.
+func (s *Server) getAllModelIDs() []string {
+	if s.config == nil {
+		// Fallback to hardcoded list if no config
+		return []string{
+			"claude-sonnet-4.5", "claude-haiku-4.5", "claude-opus-4.5", "claude-sonnet-4",
+			"gpt-5.1-codex-max", "gpt-5.1-codex", "gpt-5.2", "gpt-5.1", "gpt-5",
+			"gpt-5.1-codex-mini", "gpt-5-mini", "gpt-4.1", "gemini-3-pro-preview",
+		}
+	}
+
+	seen := make(map[string]bool)
+	var modelIDs []string
+
+	// Add global models
+	for _, m := range s.config.Models {
+		if !seen[m.ID] {
+			seen[m.ID] = true
+			modelIDs = append(modelIDs, m.ID)
+		}
+	}
+
+	// Add engine-specific models
+	if s.config.Engines != nil {
+		for _, engineCfg := range s.config.Engines {
+			for _, m := range engineCfg.Models {
+				if !seen[m.ID] {
+					seen[m.ID] = true
+					modelIDs = append(modelIDs, m.ID)
+				}
+			}
+		}
+	}
+
+	return modelIDs
+}
+
+// getDefaultEngine returns the default engine from config or fallback.
+func (s *Server) getDefaultEngine() string {
+	if s.config != nil && s.config.Orchestrator.DefaultEngine != "" {
+		return s.config.Orchestrator.DefaultEngine
+	}
+	return "copilot"
 }

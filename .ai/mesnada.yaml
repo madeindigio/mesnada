@@ -4,7 +4,8 @@
 # Default model to use when none is specified
 default_model: "claude-sonnet-4.5"
 
-# List of available models with their descriptions
+# List of available models with their descriptions (legacy/shared across all engines)
+# These models are available for all engines when engine-specific models are not defined
 models:
   - id: "claude-sonnet-4.5"
     description: "Use this model for coding tasks with a good programming practices"
@@ -42,11 +43,68 @@ models:
   - id: "gemini-3-pro-preview"
     description: "Use this model for multimodal tasks and big context requirements"
 
-  - id: "sonnet"
-    description: "Only for Claude Code engine, for general coding tasks"
+# Engine-specific model configurations (optional)
+# If defined, these override the global models list for each engine
+engines:
+  copilot:
+    default_model: "gpt-5.1-codex"
+    models:
+      - id: "gpt-5.1-codex-max"
+        description: "Advanced coding capabilities with extended context"
+      - id: "gpt-5.1-codex"
+        description: "Optimized for code generation and refactoring"
+      - id: "gpt-5.2"
+        description: "Latest GPT model with improved reasoning"
+      - id: "gpt-5.1"
+        description: "Stable GPT model for production use"
+      - id: "gpt-5"
+        description: "Base GPT-5 model"
+      - id: "gpt-5.1-codex-mini"
+        description: "Lightweight coding model for quick tasks"
+      - id: "gpt-5-mini"
+        description: "Fast and efficient for simple queries"
+      - id: "gpt-4.1"
+        description: "Reliable GPT-4 variant"
 
-  - id: "opus"
-    description: "Only for Claude Code engine, the best senior thinking model for complex tasks"
+  claude:
+    default_model: "claude-sonnet-4.5"
+    models:
+      - id: "claude-sonnet-4.5"
+        description: "Balanced performance and speed for general tasks"
+      - id: "claude-opus-4.5"
+        description: "Highest capability for complex reasoning and analysis"
+      - id: "claude-haiku-4.5"
+        description: "Fast responses for simple tasks and quick iterations"
+      - id: "claude-sonnet-4"
+        description: "Previous generation Sonnet model"
+      - id: "sonnet"
+        description: "Alias for latest Sonnet (Claude Code specific)"
+      - id: "opus"
+        description: "Alias for latest Opus (Claude Code specific)"
+      - id: "haiku"
+        description: "Alias for latest Haiku (Claude Code specific)"
+
+  gemini:
+    default_model: "gemini-3-pro-preview"
+    models:
+      - id: "gemini-3-pro-preview"
+        description: "Google's latest multimodal model"
+      - id: "gemini-2.0-flash-exp"
+        description: "Fast experimental Gemini model"
+      - id: "gemini-exp-1206"
+        description: "Experimental Gemini release"
+
+  opencode:
+    default_model: "claude-sonnet-4.5"
+    models:
+      - id: "claude-sonnet-4.5"
+        description: "Balanced performance and speed (via OpenCode)"
+      - id: "claude-opus-4.5"
+        description: "Highest capability (via OpenCode)"
+      - id: "gpt-5.1-codex"
+        description: "GPT coding model (via OpenCode)"
+      - id: "gpt-5.2"
+        description: "Latest GPT model (via OpenCode)"
 
 # Server configuration
 server:

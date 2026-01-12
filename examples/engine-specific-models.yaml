@@ -1,0 +1,75 @@
+# Example: Engine-Specific Model Configuration
+# This example shows how to configure different models for each engine
+
+default_model: "claude-sonnet-4.5"
+
+# Global models (legacy support)
+# These are used when engine-specific models are not defined
+models:
+  - id: "claude-sonnet-4.5"
+    description: "General purpose model"
+
+# Engine-specific model configurations
+engines:
+  # GitHub Copilot CLI - Only GPT models
+  copilot:
+    default_model: "gpt-5.1-codex"
+    models:
+      - id: "gpt-5.1-codex-max"
+        description: "Advanced coding with extended context"
+      - id: "gpt-5.1-codex"
+        description: "Optimized for code generation"
+      - id: "gpt-5.2"
+        description: "Latest GPT model"
+      - id: "gpt-5.1"
+        description: "Stable production model"
+      - id: "gpt-4.1"
+        description: "Reliable GPT-4"
+
+  # Anthropic Claude CLI - Claude models and aliases
+  claude:
+    default_model: "claude-sonnet-4.5"
+    models:
+      - id: "claude-opus-4.5"
+        description: "Highest capability - complex reasoning"
+      - id: "claude-sonnet-4.5"
+        description: "Balanced - general tasks"
+      - id: "claude-haiku-4.5"
+        description: "Fast - simple tasks"
+      - id: "opus"
+        description: "Alias for latest Opus (Claude Code)"
+      - id: "sonnet"
+        description: "Alias for latest Sonnet (Claude Code)"
+      - id: "haiku"
+        description: "Alias for latest Haiku (Claude Code)"
+
+  # Google Gemini CLI - Gemini models only
+  gemini:
+    default_model: "gemini-3-pro-preview"
+    models:
+      - id: "gemini-3-pro-preview"
+        description: "Latest multimodal model"
+      - id: "gemini-2.0-flash-exp"
+        description: "Fast experimental model"
+
+  # OpenCode.ai CLI - Mixed models (supports multiple providers)
+  opencode:
+    default_model: "claude-sonnet-4.5"
+    models:
+      - id: "claude-sonnet-4.5"
+        description: "Claude via OpenCode"
+      - id: "claude-opus-4.5"
+        description: "Claude Opus via OpenCode"
+      - id: "gpt-5.1-codex"
+        description: "GPT via OpenCode"
+
+server:
+  host: "127.0.0.1"
+  port: 8765
+
+orchestrator:
+  store_path: "~/.mesnada/tasks.json"
+  log_dir: "~/.mesnada/logs"
+  max_parallel: 5
+  default_engine: "copilot"
+  default_mcp_config: "@.github/mcp-config.json"

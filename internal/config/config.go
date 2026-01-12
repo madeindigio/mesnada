@@ -17,12 +17,19 @@ type ModelConfig struct {
 	Description string `json:"description" yaml:"description"`
 }
 
+// EngineConfig holds engine-specific configuration.
+type EngineConfig struct {
+	DefaultModel string        `json:"default_model" yaml:"default_model"`
+	Models       []ModelConfig `json:"models" yaml:"models"`
+}
+
 // Config holds the application configuration.
 type Config struct {
-	DefaultModel string             `json:"default_model" yaml:"default_model"`
-	Models       []ModelConfig      `json:"models" yaml:"models"`
-	Server       ServerConfig       `json:"server" yaml:"server"`
-	Orchestrator OrchestratorConfig `json:"orchestrator" yaml:"orchestrator"`
+	DefaultModel string                  `json:"default_model" yaml:"default_model"`
+	Models       []ModelConfig           `json:"models" yaml:"models"`
+	Engines      map[string]EngineConfig `json:"engines,omitempty" yaml:"engines,omitempty"`
+	Server       ServerConfig            `json:"server" yaml:"server"`
+	Orchestrator OrchestratorConfig      `json:"orchestrator" yaml:"orchestrator"`
 }
 
 // ServerConfig holds HTTP server configuration.
@@ -171,6 +178,55 @@ func (c *Config) GetModelByID(id string) *ModelConfig {
 // ValidateModel checks if a model ID is valid.
 func (c *Config) ValidateModel(id string) bool {
 	return c.GetModelByID(id) != nil
+}
+
+// GetModelsForEngine returns the list of available models for a specific engine.
+// If engine-specific models are configured, returns those; otherwise returns the global models list.
+func (c *Config) GetModelsForEngine(engine string) []ModelConfig {
+	if c.Engines != nil {
+		if engineConfig, ok := c.Engines[engine]; ok && len(engineConfig.Models) > 0 {
+			return engineConfig.Models
+		}
+	}
+	// Fallback to global models for backward compatibility
+	return c.Models
+}
+
+// GetModelForEngine returns a specific model config for an engine.
+func (c *Config) GetModelForEngine(engine, modelID string) *ModelConfig {
+	models := c.GetModelsForEngine(engine)
+	for _, m := range models {
+		if m.ID == modelID {
+			return &m
+		}
+	}
+	return nil
+}
+
+// ValidateModelForEngine checks if a model ID is valid for a specific engine.
+func (c *Config) ValidateModelForEngine(engine, modelID string) bool {
+	return c.GetModelForEngine(engine, modelID) != nil
+}
+
+// GetDefaultModelForEngine returns the default model for an engine.
+func (c *Config) GetDefaultModelForEngine(engine string) string {
+	if c.Engines != nil {
+		if engineConfig, ok := c.Engines[engine]; ok && engineConfig.DefaultModel != "" {
+			return engineConfig.DefaultModel
+		}
+	}
+	// Fallback to global default
+	return c.DefaultModel
+}
+
+// GetModelIDsForEngine returns a list of model IDs for an engine.
+func (c *Config) GetModelIDsForEngine(engine string) []string {
+	models := c.GetModelsForEngine(engine)
+	ids := make([]string, len(models))
+	for i, m := range models {
+		ids[i] = m.ID
+	}
+	return ids
 }
 
 // expandHome expands ~ to home directory in paths.

@@ -26,6 +26,11 @@
       "command": "remembrances-mcp",
       "args": ["--config", "/www/MCP/mesnada/.ai/remembrances.config.yaml"],
     },
+    "mesnada": {
+      "enabled": true,
+      "command": "mesnada",
+      "args": ["-stdio", "-config", "/www/MCP/mesnada/.ai/mesnada.yaml"],
+    },
     "chrome-devtools": {
       "env": {},
       "enabled": true,

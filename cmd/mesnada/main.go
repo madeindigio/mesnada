@@ -91,6 +91,7 @@ func main() {
 		Version:      version,
 		Commit:       commit,
 		UseStdio:     *useStdio,
+		AppConfig:    cfg,
 	})
 
 	// Handle shutdown
