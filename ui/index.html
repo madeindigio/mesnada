@@ -1043,12 +1043,16 @@
                 } catch (_) {}
             });
 
-            document.body.addEventListener("htmx:afterSettle", () => {
+            document.body.addEventListener("htmx:afterSettle", (e) => {
                 if (!window.Alpine) return;
                 try {
-                    fitLogHeight.ensureObserver();
-                    fitLogHeight.schedule();
-                    if (Alpine.store("ui").autoscroll) scrollLogToBottom();
+                    const tgt = e.target;
+                    if (!tgt) return;
+                    if (tgt.id === "log-content" || tgt.id === "right-panel") {
+                        fitLogHeight.ensureObserver();
+                        fitLogHeight.schedule();
+                        if (Alpine.store("ui").autoscroll) scrollLogToBottom();
+                    }
                 } catch (_) {}
             });
 
