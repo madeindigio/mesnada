@@ -301,12 +301,12 @@ type OpenCodeMCPConfig struct {
 
 // OpenCodeMCPServer represents a server entry in OpenCode.ai format.
 type OpenCodeMCPServer struct {
-	Type    string   `json:"type"` // "local" or "remote"
-	Command string   `json:"command,omitempty"`
-	Args    []string `json:"args,omitempty"`
-	Env     []string `json:"env,omitempty"` // Array of "KEY=value" strings
-	URL     string   `json:"url,omitempty"`
-	Enabled bool     `json:"enabled,omitempty"`
+	Type        string            `json:"type"`              // "local" or "remote"
+	Command     []string          `json:"command,omitempty"` // Array: [command, ...args]
+	Environment map[string]string `json:"environment,omitempty"`
+	URL         string            `json:"url,omitempty"`
+	Enabled     bool              `json:"enabled,omitempty"`
+	Timeout     int               `json:"timeout,omitempty"`
 }
 
 // ConvertMCPConfigForOpenCode converts Mesnada MCP config to OpenCode.ai format.
@@ -356,24 +356,24 @@ func ConvertMCPConfigForOpenCode(mcpConfigPath, taskID, baseDir, workDir string)
 	for name, server := range mesnadaConfig.MCPServers {
 		opencodeServer := OpenCodeMCPServer{
 			Enabled: true,
+			Timeout: 5000, // Default timeout in ms
 		}
 
 		switch server.Type {
 		case "local":
 			opencodeServer.Type = "local"
-			opencodeServer.Command = server.Command
-			opencodeServer.Args = server.Args
+			// Combine command and args into a single array
+			opencodeServer.Command = append([]string{server.Command}, server.Args...)
 		case "http":
 			// Convert HTTP to stdio using mcp-remote
 			// OpenCode CLI doesn't support HTTP MCP servers natively
 			opencodeServer.Type = "local"
-			opencodeServer.Command = "npx"
-			opencodeServer.Args = []string{"-y", "mcp-remote", server.URL}
+			opencodeServer.Command = []string{"npx", "-y", "mcp-remote", server.URL}
 		default:
 			// Assume local if type not specified
 			opencodeServer.Type = "local"
-			opencodeServer.Command = server.Command
-			opencodeServer.Args = server.Args
+			// Combine command and args into a single array
+			opencodeServer.Command = append([]string{server.Command}, server.Args...)
 		}
 
 		opencodeConfig.MCP[name] = opencodeServer

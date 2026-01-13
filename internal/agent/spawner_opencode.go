@@ -84,9 +84,16 @@ func (s *OpenCodeSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	cmd.Dir = task.WorkDir
 
 	// Set up environment
-	cmd.Env = append(os.Environ(),
+	env := append(os.Environ(),
 		"NO_COLOR=1",
 	)
+
+	// Add MCP config via OPENCODE_CONFIG environment variable
+	if mcpConfigPath != "" {
+		env = append(env, fmt.Sprintf("OPENCODE_CONFIG=%s", mcpConfigPath))
+	}
+
+	cmd.Env = env
 
 	// Create log file
 	logPath := filepath.Join(s.logDir, fmt.Sprintf("%s.log", task.ID))
@@ -163,9 +170,10 @@ func (s *OpenCodeSpawner) buildArgs(task *models.Task, mcpConfigPath string) []s
 	// Prepend task_id to the prompt
 	promptWithTaskID := fmt.Sprintf("You are the task_id: %s\n\n%s", task.ID, task.Prompt)
 
-	// Note: opencode doesn't support MCP config via CLI flag
-	// MCP configuration needs to be done through opencode mcp command separately
-	_ = mcpConfigPath // unused for now
+	// Note: OpenCode doesn't support MCP config via CLI flag
+	// MCP configuration is passed via OPENCODE_CONFIG environment variable
+	// The mcpConfigPath is used in the Spawn method to set the env var
+	_ = mcpConfigPath // unused in buildArgs, used in Spawn
 
 	args := []string{
 		"run", // Use run subcommand for non-interactive execution
