@@ -46,11 +46,27 @@ type ClaudeMCPServer struct {
 
 // ConvertMCPConfig converts a Mesnada MCP config file to Claude CLI format.
 // It reads the source file and returns the path to a temporary file with the converted config.
-func ConvertMCPConfig(mcpConfigPath, tempDir string) (string, error) {
+// workDir is the working directory to resolve relative paths (should be task.WorkDir).
+func ConvertMCPConfig(mcpConfigPath, tempDir, workDir string) (string, error) {
 	// Handle @ prefix (file reference)
 	sourcePath := mcpConfigPath
 	if strings.HasPrefix(sourcePath, "@") {
 		sourcePath = sourcePath[1:]
+	}
+
+	// Convert workDir to absolute path if it's relative
+	absWorkDir := workDir
+	if workDir != "" && !filepath.IsAbs(workDir) {
+		var err error
+		absWorkDir, err = filepath.Abs(workDir)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve workDir to absolute path: %w", err)
+		}
+	}
+
+	// Resolve relative paths from workDir
+	if !filepath.IsAbs(sourcePath) && absWorkDir != "" {
+		sourcePath = filepath.Join(absWorkDir, sourcePath)
 	}
 
 	// Read source file
@@ -78,16 +94,35 @@ func ConvertMCPConfig(mcpConfigPath, tempDir string) (string, error) {
 			// stdio transport
 			claudeServer.Command = server.Command
 			claudeServer.Args = server.Args
-			claudeServer.Cwd = server.Cwd
+			// Convert relative cwd to absolute path
+			if server.Cwd != "" {
+				if filepath.IsAbs(server.Cwd) {
+					claudeServer.Cwd = server.Cwd
+				} else if absWorkDir != "" {
+					claudeServer.Cwd = filepath.Join(absWorkDir, server.Cwd)
+				} else {
+					claudeServer.Cwd = server.Cwd
+				}
+			}
 		case "http":
-			// SSE transport
-			claudeServer.Type = "sse"
-			claudeServer.URL = server.URL
+			// Convert HTTP to stdio using mcp-remote
+			// Claude CLI doesn't support HTTP MCP servers natively
+			claudeServer.Command = "npx"
+			claudeServer.Args = []string{"-y", "mcp-remote", server.URL}
 		default:
 			// Assume local if type not specified
 			claudeServer.Command = server.Command
 			claudeServer.Args = server.Args
-			claudeServer.Cwd = server.Cwd
+			// Convert relative cwd to absolute path
+			if server.Cwd != "" {
+				if filepath.IsAbs(server.Cwd) {
+					claudeServer.Cwd = server.Cwd
+				} else if absWorkDir != "" {
+					claudeServer.Cwd = filepath.Join(absWorkDir, server.Cwd)
+				} else {
+					claudeServer.Cwd = server.Cwd
+				}
+			}
 		}
 
 		claudeConfig.MCPServers[name] = claudeServer
@@ -114,7 +149,7 @@ func ConvertMCPConfig(mcpConfigPath, tempDir string) (string, error) {
 
 // ConvertMCPConfigForTask converts MCP config for a specific task.
 // Returns the path to use with --mcp-config flag.
-func ConvertMCPConfigForTask(mcpConfigPath, taskID, baseDir string) (string, error) {
+func ConvertMCPConfigForTask(mcpConfigPath, taskID, baseDir, workDir string) (string, error) {
 	if mcpConfigPath == "" {
 		return "", nil
 	}
@@ -122,7 +157,7 @@ func ConvertMCPConfigForTask(mcpConfigPath, taskID, baseDir string) (string, err
 	// Create task-specific temp directory
 	tempDir := filepath.Join(baseDir, "claude-mcp", taskID)
 
-	return ConvertMCPConfig(mcpConfigPath, tempDir)
+	return ConvertMCPConfig(mcpConfigPath, tempDir, workDir)
 }
 
 // CleanupMCPConfig removes the temporary MCP config file for a task.
@@ -152,7 +187,7 @@ type GeminiMCPServer struct {
 }
 
 // ConvertMCPConfigForGemini converts Mesnada MCP config to Gemini CLI format.
-func ConvertMCPConfigForGemini(mcpConfigPath, taskID, baseDir string) (string, error) {
+func ConvertMCPConfigForGemini(mcpConfigPath, taskID, baseDir, workDir string) (string, error) {
 	if mcpConfigPath == "" {
 		return "", nil
 	}
@@ -161,6 +196,21 @@ func ConvertMCPConfigForGemini(mcpConfigPath, taskID, baseDir string) (string, e
 	sourcePath := mcpConfigPath
 	if strings.HasPrefix(sourcePath, "@") {
 		sourcePath = sourcePath[1:]
+	}
+
+	// Convert workDir to absolute path if it's relative
+	absWorkDir := workDir
+	if workDir != "" && !filepath.IsAbs(workDir) {
+		var err error
+		absWorkDir, err = filepath.Abs(workDir)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve workDir to absolute path: %w", err)
+		}
+	}
+
+	// Resolve relative paths from workDir
+	if !filepath.IsAbs(sourcePath) && absWorkDir != "" {
+		sourcePath = filepath.Join(absWorkDir, sourcePath)
 	}
 
 	// Read source file
@@ -190,15 +240,35 @@ func ConvertMCPConfigForGemini(mcpConfigPath, taskID, baseDir string) (string, e
 			// stdio transport
 			geminiServer.Command = server.Command
 			geminiServer.Args = server.Args
-			geminiServer.Cwd = server.Cwd
+			// Convert relative cwd to absolute path
+			if server.Cwd != "" {
+				if filepath.IsAbs(server.Cwd) {
+					geminiServer.Cwd = server.Cwd
+				} else if absWorkDir != "" {
+					geminiServer.Cwd = filepath.Join(absWorkDir, server.Cwd)
+				} else {
+					geminiServer.Cwd = server.Cwd
+				}
+			}
 		case "http":
-			// HTTP transport
-			geminiServer.HttpURL = server.URL
+			// Convert HTTP to stdio using mcp-remote
+			// Gemini CLI doesn't support HTTP MCP servers natively
+			geminiServer.Command = "npx"
+			geminiServer.Args = []string{"-y", "mcp-remote", server.URL}
 		default:
 			// Assume local if type not specified
 			geminiServer.Command = server.Command
 			geminiServer.Args = server.Args
-			geminiServer.Cwd = server.Cwd
+			// Convert relative cwd to absolute path
+			if server.Cwd != "" {
+				if filepath.IsAbs(server.Cwd) {
+					geminiServer.Cwd = server.Cwd
+				} else if absWorkDir != "" {
+					geminiServer.Cwd = filepath.Join(absWorkDir, server.Cwd)
+				} else {
+					geminiServer.Cwd = server.Cwd
+				}
+			}
 		}
 
 		geminiConfig.MCPServers[name] = geminiServer
@@ -240,7 +310,7 @@ type OpenCodeMCPServer struct {
 }
 
 // ConvertMCPConfigForOpenCode converts Mesnada MCP config to OpenCode.ai format.
-func ConvertMCPConfigForOpenCode(mcpConfigPath, taskID, baseDir string) (string, error) {
+func ConvertMCPConfigForOpenCode(mcpConfigPath, taskID, baseDir, workDir string) (string, error) {
 	if mcpConfigPath == "" {
 		return "", nil
 	}
@@ -249,6 +319,21 @@ func ConvertMCPConfigForOpenCode(mcpConfigPath, taskID, baseDir string) (string,
 	sourcePath := mcpConfigPath
 	if strings.HasPrefix(sourcePath, "@") {
 		sourcePath = sourcePath[1:]
+	}
+
+	// Convert workDir to absolute path if it's relative
+	absWorkDir := workDir
+	if workDir != "" && !filepath.IsAbs(workDir) {
+		var err error
+		absWorkDir, err = filepath.Abs(workDir)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve workDir to absolute path: %w", err)
+		}
+	}
+
+	// Resolve relative paths from workDir
+	if !filepath.IsAbs(sourcePath) && absWorkDir != "" {
+		sourcePath = filepath.Join(absWorkDir, sourcePath)
 	}
 
 	// Read source file
@@ -279,8 +364,11 @@ func ConvertMCPConfigForOpenCode(mcpConfigPath, taskID, baseDir string) (string,
 			opencodeServer.Command = server.Command
 			opencodeServer.Args = server.Args
 		case "http":
-			opencodeServer.Type = "remote"
-			opencodeServer.URL = server.URL
+			// Convert HTTP to stdio using mcp-remote
+			// OpenCode CLI doesn't support HTTP MCP servers natively
+			opencodeServer.Type = "local"
+			opencodeServer.Command = "npx"
+			opencodeServer.Args = []string{"-y", "mcp-remote", server.URL}
 		default:
 			// Assume local if type not specified
 			opencodeServer.Type = "local"

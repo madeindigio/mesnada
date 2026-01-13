@@ -63,7 +63,7 @@ func (s *OpenCodeSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	if task.MCPConfig != "" {
 		var err error
 		mcpTempDir = filepath.Join(s.logDir, "opencode-mcp", task.ID)
-		mcpConfigPath, err = ConvertMCPConfigForOpenCode(task.MCPConfig, task.ID, s.logDir)
+		mcpConfigPath, err = ConvertMCPConfigForOpenCode(task.MCPConfig, task.ID, s.logDir, task.WorkDir)
 		if err != nil {
 			log.Printf("Warning: failed to convert MCP config for OpenCode CLI: %v", err)
 			// Continue without MCP config
@@ -163,22 +163,22 @@ func (s *OpenCodeSpawner) buildArgs(task *models.Task, mcpConfigPath string) []s
 	// Prepend task_id to the prompt
 	promptWithTaskID := fmt.Sprintf("You are the task_id: %s\n\n%s", task.ID, task.Prompt)
 
+	// Note: opencode doesn't support MCP config via CLI flag
+	// MCP configuration needs to be done through opencode mcp command separately
+	_ = mcpConfigPath // unused for now
+
 	args := []string{
-		"-p", // Non-interactive mode (prompt mode)
-		"-q", // Quiet mode (no spinner/TUI)
+		"run", // Use run subcommand for non-interactive execution
 	}
 
 	if task.Model != "" {
 		args = append(args, "-m", task.Model)
 	}
 
-	if mcpConfigPath != "" {
-		args = append(args, "--config", mcpConfigPath)
-	}
-
 	args = append(args, task.ExtraArgs...)
 
-	// Add the prompt as the final argument
+	// Add the prompt as the final positional argument
+	// Note: OpenCode run expects message as a positional argument
 	args = append(args, promptWithTaskID)
 
 	// Store the modified prompt
@@ -212,7 +212,7 @@ func (s *OpenCodeSpawner) captureOutput(proc *OpenCodeProcess, stdout, stderr io
 		}
 	}()
 
-	// Capture stderr as-is
+	// Discard stderr completely (don't capture to log file or memory)
 	go func() {
 		defer wg.Done()
 		scanner := bufio.NewScanner(stderr)
@@ -220,14 +220,7 @@ func (s *OpenCodeSpawner) captureOutput(proc *OpenCodeProcess, stdout, stderr io
 		scanner.Buffer(buf, 1024*1024)
 
 		for scanner.Scan() {
-			line := scanner.Text()
-			fmt.Fprintf(proc.logFile, "[stderr] %s\n", line)
-
-			if proc.output.Len() < maxOutputCapture {
-				proc.output.WriteString("[stderr] ")
-				proc.output.WriteString(line)
-				proc.output.WriteString("\n")
-			}
+			// Silently discard stderr lines
 		}
 	}()
 

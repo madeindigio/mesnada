@@ -520,6 +520,8 @@ func (o *Orchestrator) Resume(ctx context.Context, taskID string, opts ResumeOpt
 }
 
 // Delete removes a task from the store.
+// If the task is running, it will attempt to cancel it first.
+// If the process is already dead or doesn't exist, the task will be deleted anyway.
 func (o *Orchestrator) Delete(taskID string) error {
 	task, err := o.store.Get(taskID)
 	if err != nil {
@@ -527,7 +529,22 @@ func (o *Orchestrator) Delete(taskID string) error {
 	}
 
 	if task.Status == models.TaskStatusRunning {
-		return fmt.Errorf("cannot delete running task %s", taskID)
+		// Try to cancel the task first through the manager
+		if err := o.manager.Cancel(taskID); err != nil {
+			// If cancel fails (e.g., process already dead), log it but continue
+			log.Printf("Warning: failed to cancel task %s before deletion (process may be dead): %v", taskID, err)
+		}
+
+		// Mark task as cancelled and save state
+		task.Status = models.TaskStatusCancelled
+		now := time.Now()
+		task.CompletedAt = &now
+		if err := o.store.Save(task); err != nil {
+			log.Printf("Warning: failed to save cancelled state for task %s: %v", taskID, err)
+		}
+
+		// Wait a bit for cleanup
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	return o.store.Delete(taskID)
@@ -547,8 +564,20 @@ func (o *Orchestrator) Purge(taskID string) error {
 	// Best-effort: stop the process if it is running.
 	if task.Status == models.TaskStatusRunning {
 		if err := o.manager.Cancel(taskID); err != nil {
-			return err
+			// If cancel fails (e.g., process already dead), log it but continue with purge
+			log.Printf("Warning: failed to cancel task %s during purge (process may be dead): %v", taskID, err)
 		}
+
+		// Mark task as cancelled and save state
+		task.Status = models.TaskStatusCancelled
+		now := time.Now()
+		task.CompletedAt = &now
+		if err := o.store.Save(task); err != nil {
+			log.Printf("Warning: failed to save cancelled state for task %s during purge: %v", taskID, err)
+		}
+
+		// Wait a bit for cleanup
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	// Best-effort: remove log file.

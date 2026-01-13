@@ -34,7 +34,6 @@ type ClaudeProcess struct {
 	logFile    *os.File
 	cancel     context.CancelFunc
 	done       chan struct{}
-	parser     *ClaudeOutputParser
 	mcpTempDir string // Temp dir for converted MCP config
 }
 
@@ -64,15 +63,21 @@ func (s *ClaudeSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	if task.MCPConfig != "" {
 		var err error
 		mcpTempDir = filepath.Join(s.logDir, "claude-mcp", task.ID)
-		mcpConfigPath, err = ConvertMCPConfigForTask(task.MCPConfig, task.ID, s.logDir)
+		mcpConfigPath, err = ConvertMCPConfigForTask(task.MCPConfig, task.ID, s.logDir, task.WorkDir)
 		if err != nil {
-			log.Printf("Warning: failed to convert MCP config for Claude CLI: %v", err)
+			log.Printf("ERROR: failed to convert MCP config for task %s: %v (MCPConfig=%q, WorkDir=%q, LogDir=%q)",
+				task.ID, err, task.MCPConfig, task.WorkDir, s.logDir)
 			// Continue without MCP config
+		} else {
+			log.Printf("INFO: MCP config converted successfully for task %s: %s", task.ID, mcpConfigPath)
 		}
 	}
 
 	// Build command arguments
 	args := s.buildArgs(task, mcpConfigPath)
+
+	// Log the command being executed for debugging
+	log.Printf("Executing: claude %v", args)
 
 	// Create cancellable context
 	procCtx, cancel := context.WithCancel(ctx)
@@ -144,7 +149,6 @@ func (s *ClaudeSpawner) Spawn(ctx context.Context, task *models.Task) error {
 		logFile:    logFile,
 		cancel:     cancel,
 		done:       make(chan struct{}),
-		parser:     NewClaudeOutputParser(),
 		mcpTempDir: mcpTempDir,
 	}
 
@@ -166,24 +170,24 @@ func (s *ClaudeSpawner) buildArgs(task *models.Task, mcpConfigPath string) []str
 	promptWithTaskID := fmt.Sprintf("You are the task_id: %s\n\n%s", task.ID, task.Prompt)
 
 	args := []string{
-		"-p", // Print/headless mode
-		"--output-format", "stream-json", // JSON output for parsing
+		"-p",                      // Print/headless mode
+		"--output-format", "text", // Plain text output (default, human-readable)
 		"--dangerously-skip-permissions", // Skip permission prompts for automation
-		"--verbose", // Full output
+		"--verbose",                      // Full output
 	}
 
 	if task.Model != "" {
 		args = append(args, "--model", task.Model)
 	}
 
+	args = append(args, task.ExtraArgs...)
+
+	// Add the prompt BEFORE --mcp-config to avoid path concatenation issues
+	args = append(args, promptWithTaskID)
+
 	if mcpConfigPath != "" {
 		args = append(args, "--mcp-config", mcpConfigPath)
 	}
-
-	args = append(args, task.ExtraArgs...)
-
-	// Add the prompt as the final argument
-	args = append(args, promptWithTaskID)
 
 	// Store the modified prompt
 	task.Prompt = promptWithTaskID
@@ -195,7 +199,7 @@ func (s *ClaudeSpawner) captureOutput(proc *ClaudeProcess, stdout, stderr io.Rea
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// Capture stdout (JSON events) and convert to text
+	// Capture stdout as plain text
 	go func() {
 		defer wg.Done()
 		scanner := bufio.NewScanner(stdout)
@@ -203,21 +207,15 @@ func (s *ClaudeSpawner) captureOutput(proc *ClaudeProcess, stdout, stderr io.Rea
 		scanner.Buffer(buf, 1024*1024)
 
 		for scanner.Scan() {
-			jsonLine := scanner.Text()
+			line := scanner.Text()
 
-			// Parse JSON and convert to text
-			textLine := proc.parser.ParseLine(jsonLine)
-
-			// Write parsed text to log file
-			if textLine != "" {
-				fmt.Fprint(proc.logFile, textLine)
-			}
+			// Write to log file
+			fmt.Fprintf(proc.logFile, "%s\n", line)
 
 			// Capture to memory (with limit)
 			if proc.output.Len() < maxOutputCapture {
-				if textLine != "" {
-					proc.output.WriteString(textLine)
-				}
+				proc.output.WriteString(line)
+				proc.output.WriteString("\n")
 			}
 		}
 	}()

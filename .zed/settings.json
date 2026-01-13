@@ -28,8 +28,8 @@
     },
     "mesnada": {
       "enabled": true,
-      "command": "mesnada",
-      "args": ["-stdio", "-config", "/www/MCP/mesnada/.ai/mesnada.yaml"],
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://127.0.0.1:8766/mcp"],
     },
     "chrome-devtools": {
       "env": {},

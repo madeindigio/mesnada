@@ -2,3 +2,4 @@
 mesnada
 *.log
 dist
+.ai/.mesnada

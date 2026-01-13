@@ -63,7 +63,7 @@ func (s *GeminiSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	if task.MCPConfig != "" {
 		var err error
 		mcpTempDir = filepath.Join(s.logDir, "gemini-mcp", task.ID)
-		mcpConfigPath, err = ConvertMCPConfigForGemini(task.MCPConfig, task.ID, s.logDir)
+		mcpConfigPath, err = ConvertMCPConfigForGemini(task.MCPConfig, task.ID, s.logDir, task.WorkDir)
 		if err != nil {
 			log.Printf("Warning: failed to convert MCP config for Gemini CLI: %v", err)
 			// Continue without MCP config
@@ -164,20 +164,20 @@ func (s *GeminiSpawner) buildArgs(task *models.Task, mcpConfigPath string) []str
 	promptWithTaskID := fmt.Sprintf("You are the task_id: %s\n\n%s", task.ID, task.Prompt)
 
 	args := []string{
-		"-p", // Non-interactive mode (prompt mode)
+		"--yolo", // Auto-approve all actions for non-interactive mode
 	}
 
 	if task.Model != "" {
 		args = append(args, "--model", task.Model)
 	}
 
-	if mcpConfigPath != "" {
-		args = append(args, "--mcp-config", mcpConfigPath)
-	}
+	// Note: Gemini CLI doesn't support --mcp-config flag
+	// MCP servers need to be configured through gemini mcp command separately
+	_ = mcpConfigPath // unused for now
 
 	args = append(args, task.ExtraArgs...)
 
-	// Add the prompt as the final argument
+	// Add the prompt as positional argument (not with -p flag)
 	args = append(args, promptWithTaskID)
 
 	// Store the modified prompt
@@ -211,7 +211,7 @@ func (s *GeminiSpawner) captureOutput(proc *GeminiProcess, stdout, stderr io.Rea
 		}
 	}()
 
-	// Capture stderr as-is
+	// Discard stderr completely (don't capture to log file or memory)
 	go func() {
 		defer wg.Done()
 		scanner := bufio.NewScanner(stderr)
@@ -219,14 +219,7 @@ func (s *GeminiSpawner) captureOutput(proc *GeminiProcess, stdout, stderr io.Rea
 		scanner.Buffer(buf, 1024*1024)
 
 		for scanner.Scan() {
-			line := scanner.Text()
-			fmt.Fprintf(proc.logFile, "[stderr] %s\n", line)
-
-			if proc.output.Len() < maxOutputCapture {
-				proc.output.WriteString("[stderr] ")
-				proc.output.WriteString(line)
-				proc.output.WriteString("\n")
-			}
+			// Silently discard stderr lines
 		}
 	}()
 
