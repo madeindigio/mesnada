@@ -31,13 +31,29 @@ func main() {
 		logDir      = flag.String("log-dir", "", "Directory for agent logs")
 		maxParallel = flag.Int("max-parallel", 0, "Maximum parallel agents")
 		showVersion = flag.Bool("version", false, "Show version and exit")
-		initConfig  = flag.Bool("init", false, "Initialize default config and exit")
+		initConfig  = flag.Bool("init", false, "Initialize config file and exit")
+		initPath    = flag.String("init-path", "", "Path where to create the config file (used with -init)")
 		useStdio    = flag.Bool("stdio", false, "Use stdio transport instead of HTTP")
 	)
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Printf("mesnada %s (%s)\n", version, commit)
+		os.Exit(0)
+	}
+
+	// Handle init config flag
+	if *initConfig {
+		if err := config.InitConfig(*initPath); err != nil {
+			log.Fatalf("Failed to initialize config: %v", err)
+		}
+
+		outputPath := *initPath
+		if outputPath == "" {
+			home, _ := os.UserHomeDir()
+			outputPath = home + "/.mesnada/config.yaml"
+		}
+		fmt.Printf("Configuration initialized at: %s\n", outputPath)
 		os.Exit(0)
 	}
 
@@ -62,14 +78,6 @@ func main() {
 	}
 	if *maxParallel != 0 {
 		cfg.Orchestrator.MaxParallel = *maxParallel
-	}
-
-	if *initConfig {
-		if err := cfg.Save(*configPath); err != nil {
-			log.Fatalf("Failed to save config: %v", err)
-		}
-		fmt.Println("Configuration initialized")
-		os.Exit(0)
 	}
 
 	// Create orchestrator

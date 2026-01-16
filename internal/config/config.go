@@ -2,6 +2,7 @@
 package config
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,6 +11,9 @@ import (
 
 	"gopkg.in/yaml.v2"
 )
+
+//go:embed config.example.yaml
+var defaultConfigTemplate string
 
 // ModelConfig defines a model with its description.
 type ModelConfig struct {
@@ -148,12 +152,45 @@ func (c *Config) Save(path string) error {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	data, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
+	// Detect format by extension
+	isYAML := strings.HasSuffix(strings.ToLower(path), ".yaml") || strings.HasSuffix(strings.ToLower(path), ".yml")
+
+	var data []byte
+	var err error
+
+	if isYAML {
+		data, err = yaml.Marshal(c)
+		if err != nil {
+			return fmt.Errorf("failed to marshal YAML config: %w", err)
+		}
+	} else {
+		data, err = json.MarshalIndent(c, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON config: %w", err)
+		}
 	}
 
 	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	return nil
+}
+
+// InitConfig creates a new configuration file using the embedded template.
+// If path is empty, it uses the default path (~/.mesnada/config.yaml).
+func InitConfig(path string) error {
+	if path == "" {
+		home, _ := os.UserHomeDir()
+		path = filepath.Join(home, ".mesnada", "config.yaml")
+	}
+
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	if err := os.WriteFile(path, []byte(defaultConfigTemplate), 0644); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
