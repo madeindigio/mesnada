@@ -22,6 +22,9 @@ type uiTaskRow struct {
 	WhenText      string
 	WhenTitle     string
 	Tags          []string
+	Engine        string
+	EngineClass   string
+	Model         string
 	PromptExcerpt string
 }
 
@@ -31,6 +34,9 @@ type uiTasksVM struct {
 
 type uiPanelVM struct {
 	Task          *models.Task
+	Engine        string
+	EngineClass   string
+	Model         string
 	ProgressText  string
 	WhenText      string
 	WhenTitle     string
@@ -79,6 +85,11 @@ func (s *Server) handleUITasks(w http.ResponseWriter, r *http.Request) {
 			progressText = fmt.Sprintf("%d%%", t.Progress.Percentage)
 		}
 
+		engine := string(t.Engine)
+		if engine == "" {
+			engine = string(models.DefaultEngine())
+		}
+
 		vm.Tasks = append(vm.Tasks, uiTaskRow{
 			ID:            t.ID,
 			Status:        t.Status,
@@ -87,6 +98,9 @@ func (s *Server) handleUITasks(w http.ResponseWriter, r *http.Request) {
 			WhenText:      when.Format("2006-01-02 15:04:05"),
 			WhenTitle:     when.Format(time.RFC3339),
 			Tags:          t.Tags,
+			Engine:        engine,
+			EngineClass:   engineClass(t.Engine),
+			Model:         t.Model,
 			PromptExcerpt: truncate(stripTaskIDPrefix(t.Prompt), 100),
 		})
 	}
@@ -148,8 +162,16 @@ func (s *Server) handleUIPanel(w http.ResponseWriter, r *http.Request) {
 		tagsText = strings.Join(task.Tags, ", ")
 	}
 
+	engine := string(task.Engine)
+	if engine == "" {
+		engine = string(models.DefaultEngine())
+	}
+
 	vm := uiPanelVM{
 		Task:          task,
+		Engine:        engine,
+		EngineClass:   engineClass(task.Engine),
+		Model:         task.Model,
 		ProgressText:  progressText,
 		WhenText:      when.Format("2006-01-02 15:04:05"),
 		WhenTitle:     when.Format(time.RFC3339),
@@ -233,6 +255,24 @@ func statusClass(st models.TaskStatus) string {
 		return "st-paused"
 	default:
 		return ""
+	}
+}
+
+func engineClass(engine models.Engine) string {
+	if engine == "" {
+		engine = models.DefaultEngine()
+	}
+	switch engine {
+	case models.EngineClaude:
+		return "engine-claude"
+	case models.EngineCopilot:
+		return "engine-copilot"
+	case models.EngineGemini:
+		return "engine-gemini"
+	case models.EngineOpenCode:
+		return "engine-opencode"
+	default:
+		return "engine-copilot"
 	}
 }
 
