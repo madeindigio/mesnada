@@ -166,13 +166,8 @@ func CleanupMCPConfig(taskID, baseDir string) error {
 	return os.RemoveAll(tempDir)
 }
 
-// GeminiMCPConfig represents the Gemini CLI MCP configuration format.
-// This is the format expected by `gemini --mcp-config`
-type GeminiMCPConfig struct {
-	MCPServers map[string]GeminiMCPServer `json:"mcpServers"`
-}
-
 // GeminiMCPServer represents a server entry in Gemini CLI format.
+// Gemini CLI expects mcpServers in the settings.json file.
 type GeminiMCPServer struct {
 	// For stdio transport (local commands)
 	Command string            `json:"command,omitempty"`
@@ -186,8 +181,16 @@ type GeminiMCPServer struct {
 	Trust   bool   `json:"trust,omitempty"`
 }
 
-// ConvertMCPConfigForGemini converts Mesnada MCP config to Gemini CLI format.
-func ConvertMCPConfigForGemini(mcpConfigPath, taskID, baseDir, workDir string) (string, error) {
+// GeminiSettings represents the Gemini CLI settings format.
+// This is the format expected by GEMINI_CLI_SYSTEM_SETTINGS_PATH
+type GeminiSettings struct {
+	MCPServers map[string]GeminiMCPServer `json:"mcpServers,omitempty"`
+}
+
+// CreateGeminiSettingsFile creates a temporary settings.json file with MCP configuration.
+// The file path should be passed to Gemini CLI via GEMINI_CLI_SYSTEM_SETTINGS_PATH env var.
+// Returns the path to the settings file (for cleanup), or empty if no config.
+func CreateGeminiSettingsFile(mcpConfigPath, taskID, baseDir, workDir string) (string, error) {
 	if mcpConfigPath == "" {
 		return "", nil
 	}
@@ -226,9 +229,7 @@ func ConvertMCPConfigForGemini(mcpConfigPath, taskID, baseDir, workDir string) (
 	}
 
 	// Convert to Gemini format
-	geminiConfig := GeminiMCPConfig{
-		MCPServers: make(map[string]GeminiMCPServer),
-	}
+	mcpServers := make(map[string]GeminiMCPServer)
 
 	for name, server := range mesnadaConfig.MCPServers {
 		geminiServer := GeminiMCPServer{
@@ -271,27 +272,42 @@ func ConvertMCPConfigForGemini(mcpConfigPath, taskID, baseDir, workDir string) (
 			}
 		}
 
-		geminiConfig.MCPServers[name] = geminiServer
+		mcpServers[name] = geminiServer
 	}
 
 	// Create task-specific temp directory
-	tempDir := filepath.Join(baseDir, "gemini-mcp", taskID)
+	tempDir := filepath.Join(baseDir, "gemini-settings", taskID)
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create temp dir: %w", err)
 	}
 
-	// Write to temp file
-	outputPath := filepath.Join(tempDir, "gemini-mcp-config.json")
-	outputData, err := json.MarshalIndent(geminiConfig, "", "  ")
+	// Create settings with MCP config
+	settings := GeminiSettings{
+		MCPServers: mcpServers,
+	}
+
+	// Write to temp settings.json file
+	outputPath := filepath.Join(tempDir, "settings.json")
+	outputData, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal Gemini MCP config: %w", err)
+		return "", fmt.Errorf("failed to marshal Gemini settings: %w", err)
 	}
 
 	if err := os.WriteFile(outputPath, outputData, 0644); err != nil {
-		return "", fmt.Errorf("failed to write Gemini MCP config: %w", err)
+		return "", fmt.Errorf("failed to write Gemini settings: %w", err)
 	}
 
 	return outputPath, nil
+}
+
+// CleanupGeminiSettingsFile removes the temporary settings file created for a task.
+func CleanupGeminiSettingsFile(settingsPath string) error {
+	if settingsPath == "" {
+		return nil
+	}
+	// Remove the file and the parent directory
+	dir := filepath.Dir(settingsPath)
+	return os.RemoveAll(dir)
 }
 
 // OpenCodeMCPConfig represents the OpenCode.ai MCP configuration format.

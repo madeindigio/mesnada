@@ -33,34 +33,25 @@ func (s *Server) registerTools() {
 }
 
 func (s *Server) getToolDefinitions() []Tool {
-	// Build model enum from configuration (all models from all engines + global)
-	modelEnum := s.getAllModelIDs()
-
 	return []Tool{
 		{
 			Name:        "spawn_agent",
-			Description: "Spawn a new CLI agent to execute a task. Supports multiple engines: 'copilot' (GitHub Copilot CLI), 'claude' (Anthropic Claude CLI), 'gemini' (Google Gemini CLI), or 'opencode' (OpenCode.ai CLI). The agent runs in the specified working directory with full tool access. Use background=true for long-running tasks.",
+			Description: "Spawn a new Copilot CLI agent to execute a task. The agent runs in the specified working directory with full tool access. Use background=true for long-running tasks.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"prompt": map[string]interface{}{
 						"type":        "string",
-						"description": "The prompt/instruction for the agent to execute",
+						"description": "The prompt/instruction for the Copilot agent to execute",
 					},
 					"work_dir": map[string]interface{}{
 						"type":        "string",
 						"description": "Working directory for the agent (absolute path)",
 					},
-					"engine": map[string]interface{}{
-						"type":        "string",
-						"description": "CLI engine to use: 'copilot' (GitHub Copilot CLI, default), 'claude' (Anthropic Claude CLI), 'gemini' (Google Gemini CLI), or 'opencode' (OpenCode.ai CLI)",
-						"enum":        []string{"copilot", "claude", "gemini", "opencode"},
-						"default":     "copilot",
-					},
 					"model": map[string]interface{}{
 						"type":        "string",
-						"description": "AI model to use (e.g., claude-sonnet-4, gpt-5.1-codex). Note: Model availability depends on the selected engine.",
-						"enum":        modelEnum,
+						"description": "AI model to use (e.g., claude-sonnet-4, gpt-5.1-codex)",
+						"enum":        []string{"claude-sonnet-4.5", "claude-haiku-4.5", "claude-opus-4.5", "claude-sonnet-4", "gpt-5.1-codex-max", "gpt-5.1-codex", "gpt-5.2", "gpt-5.1", "gpt-5", "gpt-5.1-codex-mini", "gpt-5-mini", "gpt-4.1", "gemini-3-pro-preview"},
 					},
 					"background": map[string]interface{}{
 						"type":        "boolean",
@@ -83,22 +74,12 @@ func (s *Server) getToolDefinitions() []Tool {
 					},
 					"mcp_config": map[string]interface{}{
 						"type":        "string",
-						"description": "Additional MCP configuration JSON or file path (prefix with @). For Claude engine, this will be automatically converted to Claude CLI format.",
+						"description": "Additional MCP configuration JSON or file path (prefix with @)",
 					},
 					"extra_args": map[string]interface{}{
 						"type":        "array",
 						"items":       map[string]string{"type": "string"},
-						"description": "Additional command-line arguments for the CLI engine",
-					},
-					"include_dependency_logs": map[string]interface{}{
-						"type":        "boolean",
-						"description": "Include logs from dependency tasks in the prompt. When true, the last N lines of logs from all dependency tasks will be added to the prompt with the header '===LAST TASK RESULTS==='",
-						"default":     false,
-					},
-					"dependency_log_lines": map[string]interface{}{
-						"type":        "integer",
-						"description": "Number of lines to include from each dependency task log (default: 100)",
-						"default":     100,
+						"description": "Additional command-line arguments for copilot CLI",
 					},
 				},
 				"required": []string{"prompt"},
@@ -237,7 +218,7 @@ func (s *Server) getToolDefinitions() []Tool {
 					"model": map[string]interface{}{
 						"type":        "string",
 						"description": "AI model to use (optional; defaults to previous task model)",
-						"enum":        modelEnum,
+						"enum":        []string{"claude-sonnet-4.5", "claude-haiku-4.5", "claude-opus-4.5", "claude-sonnet-4", "gpt-5.1-codex-max", "gpt-5.1-codex", "gpt-5.2", "gpt-5.1", "gpt-5", "gpt-5.1-codex-mini", "gpt-5-mini", "gpt-4.1", "gemini-3-pro-preview"},
 					},
 					"background": map[string]interface{}{
 						"type":        "boolean",
@@ -324,18 +305,15 @@ func (s *Server) getToolDefinitions() []Tool {
 
 func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req struct {
-		Prompt                string   `json:"prompt"`
-		WorkDir               string   `json:"work_dir"`
-		Engine                string   `json:"engine"`
-		Model                 string   `json:"model"`
-		Background            *bool    `json:"background"`
-		Timeout               string   `json:"timeout"`
-		Dependencies          []string `json:"dependencies"`
-		Tags                  []string `json:"tags"`
-		MCPConfig             string   `json:"mcp_config"`
-		ExtraArgs             []string `json:"extra_args"`
-		IncludeDependencyLogs *bool    `json:"include_dependency_logs"`
-		DependencyLogLines    *int     `json:"dependency_log_lines"`
+		Prompt       string   `json:"prompt"`
+		WorkDir      string   `json:"work_dir"`
+		Model        string   `json:"model"`
+		Background   *bool    `json:"background"`
+		Timeout      string   `json:"timeout"`
+		Dependencies []string `json:"dependencies"`
+		Tags         []string `json:"tags"`
+		MCPConfig    string   `json:"mcp_config"`
+		ExtraArgs    []string `json:"extra_args"`
 	}
 
 	if err := json.Unmarshal(params, &req); err != nil {
@@ -346,55 +324,22 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 		return nil, fmt.Errorf("prompt is required")
 	}
 
-	// Validate engine if provided
-	engine := models.Engine(req.Engine)
-	if req.Engine != "" && !models.ValidEngine(engine) {
-		return nil, fmt.Errorf("invalid engine: %s (valid: copilot, claude, gemini, opencode)", req.Engine)
-	}
-
-	// Use default engine if not specified
-	if engine == "" {
-		engine = models.Engine(s.getDefaultEngine())
-	}
-
-	// Validate model for the specified engine
-	if req.Model != "" && s.config != nil {
-		if !s.config.ValidateModelForEngine(string(engine), req.Model) {
-			availableModels := s.config.GetModelIDsForEngine(string(engine))
-			return nil, fmt.Errorf("invalid model '%s' for engine '%s'. Available models: %v", req.Model, engine, availableModels)
-		}
-	}
-
 	// Default to background execution
 	background := true
 	if req.Background != nil {
 		background = *req.Background
 	}
 
-	// Default values for dependency logs
-	includeDependencyLogs := false
-	if req.IncludeDependencyLogs != nil {
-		includeDependencyLogs = *req.IncludeDependencyLogs
-	}
-
-	dependencyLogLines := 100
-	if req.DependencyLogLines != nil {
-		dependencyLogLines = *req.DependencyLogLines
-	}
-
 	task, err := s.orchestrator.Spawn(ctx, models.SpawnRequest{
-		Prompt:                req.Prompt,
-		WorkDir:               req.WorkDir,
-		Engine:                engine,
-		Model:                 req.Model,
-		Background:            background,
-		Timeout:               req.Timeout,
-		Dependencies:          req.Dependencies,
-		Tags:                  req.Tags,
-		MCPConfig:             req.MCPConfig,
-		ExtraArgs:             req.ExtraArgs,
-		IncludeDependencyLogs: includeDependencyLogs,
-		DependencyLogLines:    dependencyLogLines,
+		Prompt:       req.Prompt,
+		WorkDir:      req.WorkDir,
+		Model:        req.Model,
+		Background:   background,
+		Timeout:      req.Timeout,
+		Dependencies: req.Dependencies,
+		Tags:         req.Tags,
+		MCPConfig:    req.MCPConfig,
+		ExtraArgs:    req.ExtraArgs,
 	})
 
 	if err != nil {
@@ -404,7 +349,6 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 	result := map[string]interface{}{
 		"task_id":    task.ID,
 		"status":     task.Status,
-		"engine":     task.Engine,
 		"work_dir":   task.WorkDir,
 		"created_at": task.CreatedAt,
 	}
@@ -740,50 +684,4 @@ func (s *Server) toolSetProgress(ctx context.Context, params json.RawMessage) (i
 		"description": req.Description,
 		"updated":     true,
 	}, nil
-}
-
-// getAllModelIDs returns a deduplicated list of all model IDs from config.
-// This includes models from all engines plus the global models list.
-func (s *Server) getAllModelIDs() []string {
-	if s.config == nil {
-		// Fallback to hardcoded list if no config
-		return []string{
-			"claude-sonnet-4.5", "claude-haiku-4.5", "claude-opus-4.5", "claude-sonnet-4",
-			"gpt-5.1-codex-max", "gpt-5.1-codex", "gpt-5.2", "gpt-5.1", "gpt-5",
-			"gpt-5.1-codex-mini", "gpt-5-mini", "gpt-4.1", "gemini-3-pro-preview",
-		}
-	}
-
-	seen := make(map[string]bool)
-	var modelIDs []string
-
-	// Add global models
-	for _, m := range s.config.Models {
-		if !seen[m.ID] {
-			seen[m.ID] = true
-			modelIDs = append(modelIDs, m.ID)
-		}
-	}
-
-	// Add engine-specific models
-	if s.config.Engines != nil {
-		for _, engineCfg := range s.config.Engines {
-			for _, m := range engineCfg.Models {
-				if !seen[m.ID] {
-					seen[m.ID] = true
-					modelIDs = append(modelIDs, m.ID)
-				}
-			}
-		}
-	}
-
-	return modelIDs
-}
-
-// getDefaultEngine returns the default engine from config or fallback.
-func (s *Server) getDefaultEngine() string {
-	if s.config != nil && s.config.Orchestrator.DefaultEngine != "" {
-		return s.config.Orchestrator.DefaultEngine
-	}
-	return "copilot"
 }

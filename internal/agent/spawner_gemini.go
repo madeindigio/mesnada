@@ -28,13 +28,13 @@ type GeminiSpawner struct {
 
 // GeminiProcess represents a running Gemini CLI process.
 type GeminiProcess struct {
-	cmd        *exec.Cmd
-	task       *models.Task
-	output     *strings.Builder
-	logFile    *os.File
-	cancel     context.CancelFunc
-	done       chan struct{}
-	mcpTempDir string // Temp dir for converted MCP config
+	cmd                *exec.Cmd
+	task               *models.Task
+	output             *strings.Builder
+	logFile            *os.File
+	cancel             context.CancelFunc
+	done               chan struct{}
+	geminiSettingsPath string // Temp settings.json path for MCP config
 }
 
 // NewGeminiSpawner creates a new Gemini CLI agent spawner.
@@ -57,21 +57,19 @@ func NewGeminiSpawner(logDir string, onComplete func(task *models.Task)) *Gemini
 
 // Spawn starts a new Gemini CLI agent.
 func (s *GeminiSpawner) Spawn(ctx context.Context, task *models.Task) error {
-	// Convert MCP config if provided
-	var mcpConfigPath string
-	var mcpTempDir string
+	// Create temporary settings.json with MCP config
+	var geminiSettingsPath string
 	if task.MCPConfig != "" {
 		var err error
-		mcpTempDir = filepath.Join(s.logDir, "gemini-mcp", task.ID)
-		mcpConfigPath, err = ConvertMCPConfigForGemini(task.MCPConfig, task.ID, s.logDir, task.WorkDir)
+		geminiSettingsPath, err = CreateGeminiSettingsFile(task.MCPConfig, task.ID, s.logDir, task.WorkDir)
 		if err != nil {
-			log.Printf("Warning: failed to convert MCP config for Gemini CLI: %v", err)
+			log.Printf("Warning: failed to create Gemini settings for MCP config: %v", err)
 			// Continue without MCP config
 		}
 	}
 
 	// Build command arguments
-	args := s.buildArgs(task, mcpConfigPath)
+	args := s.buildArgs(task)
 
 	// Create cancellable context
 	procCtx, cancel := context.WithCancel(ctx)
@@ -84,9 +82,14 @@ func (s *GeminiSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	cmd.Dir = task.WorkDir
 
 	// Set up environment
-	cmd.Env = append(os.Environ(),
-		"NO_COLOR=1",
-	)
+	env := append(os.Environ(), "NO_COLOR=1")
+
+	// If we have MCP config, pass it via GEMINI_CLI_SYSTEM_SETTINGS_PATH
+	if geminiSettingsPath != "" {
+		env = append(env, fmt.Sprintf("GEMINI_CLI_SYSTEM_SETTINGS_PATH=%s", geminiSettingsPath))
+	}
+
+	cmd.Env = env
 
 	// Create log file
 	logPath := filepath.Join(s.logDir, fmt.Sprintf("%s.log", task.ID))
@@ -137,13 +140,13 @@ func (s *GeminiSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	)
 
 	proc := &GeminiProcess{
-		cmd:        cmd,
-		task:       task,
-		output:     output,
-		logFile:    logFile,
-		cancel:     cancel,
-		done:       make(chan struct{}),
-		mcpTempDir: mcpTempDir,
+		cmd:                cmd,
+		task:               task,
+		output:             output,
+		logFile:            logFile,
+		cancel:             cancel,
+		done:               make(chan struct{}),
+		geminiSettingsPath: geminiSettingsPath,
 	}
 
 	s.mu.Lock()
@@ -159,7 +162,7 @@ func (s *GeminiSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	return nil
 }
 
-func (s *GeminiSpawner) buildArgs(task *models.Task, mcpConfigPath string) []string {
+func (s *GeminiSpawner) buildArgs(task *models.Task) []string {
 	// Prepend task_id to the prompt
 	promptWithTaskID := fmt.Sprintf("You are the task_id: %s\n\n%s", task.ID, task.Prompt)
 
@@ -171,9 +174,8 @@ func (s *GeminiSpawner) buildArgs(task *models.Task, mcpConfigPath string) []str
 		args = append(args, "--model", task.Model)
 	}
 
-	// Note: Gemini CLI doesn't support --mcp-config flag
-	// MCP servers need to be configured through gemini mcp command separately
-	_ = mcpConfigPath // unused for now
+	// MCP servers are configured via GEMINI_CLI_SYSTEM_SETTINGS_PATH env var
+	// pointing to a task-specific temporary settings.json file
 
 	args = append(args, task.ExtraArgs...)
 
@@ -232,9 +234,9 @@ func (s *GeminiSpawner) waitForCompletion(proc *GeminiProcess) {
 
 	err := proc.cmd.Wait()
 
-	// Clean up temp MCP config
-	if proc.mcpTempDir != "" {
-		os.RemoveAll(proc.mcpTempDir)
+	// Clean up temporary settings file
+	if proc.geminiSettingsPath != "" {
+		CleanupGeminiSettingsFile(proc.geminiSettingsPath)
 	}
 
 	now := time.Now()
