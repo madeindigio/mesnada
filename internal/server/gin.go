@@ -49,6 +49,26 @@ func (s *Server) newGinEngine() *gin.Engine {
 	r.GET("/ui/partials/log", gin.WrapF(s.handleUILog))
 	r.POST("/ui/purge", gin.WrapF(s.handleUIPurge))
 
+	// Serve static assets.
+	r.GET("/ui/assets/*filepath", func(c *gin.Context) {
+		path := "assets" + c.Param("filepath")
+		b, err := fs.ReadFile(uiassets.FS, path)
+		if err != nil {
+			c.String(http.StatusNotFound, "asset not found")
+			return
+		}
+		// Determine content type based on file extension.
+		contentType := "application/octet-stream"
+		if strings.HasSuffix(path, ".png") {
+			contentType = "image/png"
+		} else if strings.HasSuffix(path, ".jpg") || strings.HasSuffix(path, ".jpeg") {
+			contentType = "image/jpeg"
+		} else if strings.HasSuffix(path, ".ico") {
+			contentType = "image/x-icon"
+		}
+		c.Data(http.StatusOK, contentType, b)
+	})
+
 	api := r.Group("/api")
 	{
 		api.GET("/version", s.handleAPIVersion)

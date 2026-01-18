@@ -8,5 +8,5 @@ import "embed"
 // ".." paths (which go:embed disallows) and ensures the UI works regardless of
 // the process working directory.
 //
-//go:embed index.html partials/*.html
+//go:embed index.html partials/*.html assets/*
 var FS embed.FS
