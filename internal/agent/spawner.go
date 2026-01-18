@@ -181,7 +181,12 @@ func (s *CopilotSpawner) buildArgs(task *models.Task) []string {
 	}
 
 	if task.MCPConfig != "" {
-		args = append(args, "--additional-mcp-config", task.MCPConfig)
+		// Copilot expects @ prefix for file references
+		mcpConfigArg := task.MCPConfig
+		if !strings.HasPrefix(mcpConfigArg, "@") {
+			mcpConfigArg = "@" + mcpConfigArg
+		}
+		args = append(args, "--additional-mcp-config", mcpConfigArg)
 	}
 
 	args = append(args, task.ExtraArgs...)

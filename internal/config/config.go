@@ -49,6 +49,7 @@ type OrchestratorConfig struct {
 	MaxParallel      int    `json:"max_parallel" yaml:"max_parallel"`
 	DefaultMCPConfig string `json:"default_mcp_config" yaml:"default_mcp_config"`
 	DefaultEngine    string `json:"default_engine" yaml:"default_engine"`
+	PersonaPath      string `json:"persona_path,omitempty" yaml:"persona_path,omitempty"`
 }
 
 // DefaultConfig returns the default configuration.
@@ -131,11 +132,14 @@ func Load(path string) (*Config, error) {
 	}
 
 	// Expand/resolve paths from config file
-	// - StorePath/LogDir: expand ~ and resolve relative paths relative to the config file directory
+	// - StorePath/LogDir/PersonaPath: expand ~ and resolve relative paths relative to the config file directory
 	// - DefaultMCPConfig: expand ~ (supports both "~/..." and "@~/...") but keep relative paths as-is
 	cfg.Orchestrator.StorePath = resolvePath(cfg.Orchestrator.StorePath, baseDir)
 	cfg.Orchestrator.LogDir = resolvePath(cfg.Orchestrator.LogDir, baseDir)
 	cfg.Orchestrator.DefaultMCPConfig = expandMCPConfig(cfg.Orchestrator.DefaultMCPConfig)
+	if cfg.Orchestrator.PersonaPath != "" {
+		cfg.Orchestrator.PersonaPath = resolvePath(cfg.Orchestrator.PersonaPath, baseDir)
+	}
 
 	return cfg, nil
 }

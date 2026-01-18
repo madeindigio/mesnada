@@ -33,10 +33,17 @@ func (s *Server) registerTools() {
 }
 
 func (s *Server) getToolDefinitions() []Tool {
+	// Get available personas for dynamic description
+	personas := s.orchestrator.ListPersonas()
+	personaDesc := "Optional persona/role to apply to the agent (prepends persona instructions to the prompt)"
+	if len(personas) > 0 {
+		personaDesc += fmt.Sprintf(". Available personas: %v", personas)
+	}
+
 	return []Tool{
 		{
 			Name:        "spawn_agent",
-			Description: "Spawn a new Copilot CLI agent to execute a task. The agent runs in the specified working directory with full tool access. Use background=true for long-running tasks.",
+			Description: "Spawn a new CLI agent to execute a task. The agent runs in the specified working directory with full tool access. Use background=true for long-running tasks.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -79,7 +86,11 @@ func (s *Server) getToolDefinitions() []Tool {
 					"extra_args": map[string]interface{}{
 						"type":        "array",
 						"items":       map[string]string{"type": "string"},
-						"description": "Additional command-line arguments for copilot CLI",
+						"description": "Additional command-line arguments for the CLI",
+					},
+					"persona": map[string]interface{}{
+						"type":        "string",
+						"description": personaDesc,
 					},
 				},
 				"required": []string{"prompt"},
@@ -314,6 +325,7 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 		Tags         []string `json:"tags"`
 		MCPConfig    string   `json:"mcp_config"`
 		ExtraArgs    []string `json:"extra_args"`
+		Persona      string   `json:"persona"`
 	}
 
 	if err := json.Unmarshal(params, &req); err != nil {
@@ -340,6 +352,7 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 		Tags:         req.Tags,
 		MCPConfig:    req.MCPConfig,
 		ExtraArgs:    req.ExtraArgs,
+		Persona:      req.Persona,
 	})
 
 	if err != nil {

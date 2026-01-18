@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/sevir/mesnada/internal/agent"
+	"github.com/sevir/mesnada/internal/persona"
 	"github.com/sevir/mesnada/internal/store"
 	"github.com/sevir/mesnada/pkg/models"
 )
@@ -20,6 +21,7 @@ import (
 type Orchestrator struct {
 	store            store.Store
 	manager          *agent.Manager
+	personaManager   *persona.Manager
 	subscribers      map[string][]chan *models.Task
 	subMu            sync.RWMutex
 	maxParallel      int
@@ -37,6 +39,7 @@ type Config struct {
 	MaxParallel      int
 	DefaultMCPConfig string
 	DefaultEngine    string
+	PersonaPath      string
 }
 
 // New creates a new Orchestrator.
@@ -58,8 +61,16 @@ func New(cfg Config) (*Orchestrator, error) {
 		defaultEngine = models.DefaultEngine()
 	}
 
+	// Initialize persona manager
+	personaManager, err := persona.NewManager(cfg.PersonaPath)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to create persona manager: %w", err)
+	}
+
 	o := &Orchestrator{
 		store:            fileStore,
+		personaManager:   personaManager,
 		subscribers:      make(map[string][]chan *models.Task),
 		maxParallel:      cfg.MaxParallel,
 		defaultMCPConfig: cfg.DefaultMCPConfig,
@@ -220,8 +231,13 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 		engine = o.defaultEngine
 	}
 
-	// Prepare the prompt with dependency logs if requested
+	// Apply persona to prompt if specified
 	prompt := req.Prompt
+	if req.Persona != "" {
+		prompt = o.personaManager.ApplyPersona(req.Persona, prompt)
+	}
+
+	// Prepare the prompt with dependency logs if requested
 	if req.IncludeDependencyLogs && len(req.Dependencies) > 0 {
 		logLines := req.DependencyLogLines
 		if logLines <= 0 {
@@ -249,6 +265,7 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 		Timeout:      timeout,
 		MCPConfig:    mcpConfig,
 		ExtraArgs:    req.ExtraArgs,
+		Persona:      req.Persona,
 		CreatedAt:    time.Now(),
 	}
 
@@ -686,6 +703,11 @@ func (o *Orchestrator) Shutdown() error {
 
 func generateID() string {
 	return fmt.Sprintf("task-%s", uuid.New().String()[:8])
+}
+
+// ListPersonas returns a list of available persona names.
+func (o *Orchestrator) ListPersonas() []string {
+	return o.personaManager.ListPersonas()
 }
 
 func logTaskReceived(task *models.Task) {

@@ -87,6 +87,7 @@ func main() {
 		MaxParallel:      cfg.Orchestrator.MaxParallel,
 		DefaultMCPConfig: cfg.Orchestrator.DefaultMCPConfig,
 		DefaultEngine:    cfg.Orchestrator.DefaultEngine,
+		PersonaPath:      cfg.Orchestrator.PersonaPath,
 	})
 	if err != nil {
 		log.Fatalf("Failed to create orchestrator: %v", err)

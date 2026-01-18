@@ -51,10 +51,10 @@ orchestrator:
   log_dir: "~/.mesnada/logs"
   max_parallel: 5
 
-  # (Optional) Additional MCP config that will be passed to *all* Copilot CLI instances.
-  # Translates to: copilot --additional-mcp-config <value>
-  # If pointing to a file, use the prefix @ (e.g. @.github/mcp-config.json)
-  default_mcp_config: "@.github/mcp-config.json"
+  # (Optional) Additional MCP config that will be passed to all spawned agents.
+  # Path to a JSON file containing MCP server configuration.
+  # Mesnada will handle engine-specific format conversion automatically.
+  default_mcp_config: ".github/mcp-config.json"
 ```
 
 To create an initial configuration:
@@ -146,6 +146,40 @@ Example for Claude Desktop (`~/Library/Application Support/Claude/claude_desktop
   }
 }
 ```
+
+## Personas
+
+Personas allow you to define different roles or behavioral guidelines for your agents. When spawning an agent with a persona, its instructions are prepended to the prompt.
+
+### Configuring Personas
+
+1. Set the `persona_path` in your configuration:
+
+```yaml
+orchestrator:
+  persona_path: "~/.mesnada/personas"
+```
+
+2. Create `.md` files in that directory. The filename (without `.md`) becomes the persona name.
+
+3. Use the persona when spawning agents:
+
+```json
+{
+  "prompt": "Review the authentication code",
+  "persona": "code_reviewer",
+  "work_dir": "/path/to/project"
+}
+```
+
+### Example Personas
+
+See the `examples/personas/` directory for example persona definitions:
+- **senior_programmer** - Experienced engineer focused on best practices
+- **qa_expert** - Quality assurance specialist focused on testing
+- **code_reviewer** - Experienced reviewer focused on code quality
+
+Create your own by adding `.md` files with role-specific instructions to your persona directory.
 
 ## Available MCP tools
 

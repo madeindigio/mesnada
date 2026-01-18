@@ -72,6 +72,7 @@ type Task struct {
 	Timeout      Duration      `json:"timeout,omitempty"`
 	MCPConfig    string        `json:"mcp_config,omitempty"`
 	ExtraArgs    []string      `json:"extra_args,omitempty"`
+	Persona      string        `json:"persona,omitempty"`
 }
 
 // Duration is a wrapper around time.Duration for JSON marshaling.
@@ -165,6 +166,7 @@ type SpawnRequest struct {
 	Timeout               string   `json:"timeout,omitempty"`
 	MCPConfig             string   `json:"mcp_config,omitempty"`
 	ExtraArgs             []string `json:"extra_args,omitempty"`
+	Persona               string   `json:"persona,omitempty"`
 	Background            bool     `json:"background"`
 	IncludeDependencyLogs bool     `json:"include_dependency_logs,omitempty"`
 	DependencyLogLines    int      `json:"dependency_log_lines,omitempty"`
