@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"time"
 
 	"github.com/sevir/mesnada/internal/orchestrator"
@@ -32,6 +33,39 @@ func (s *Server) registerTools() {
 	s.tools["set_progress"] = s.toolSetProgress
 }
 
+// detectEngineForModel detects the appropriate engine for a given model
+// by checking if the model exists in each engine's configuration and if the
+// corresponding binary is installed.
+func (s *Server) detectEngineForModel(modelID string) models.Engine {
+	if s.config.Engines == nil {
+		return ""
+	}
+
+	// Engine priority order for checking
+	// Note: We use the internal engine names (claude, gemini) but check for actual binaries
+	engineOrder := []struct {
+		engine     models.Engine
+		binaryName string
+	}{
+		{models.EngineClaude, "claude"},
+		{models.EngineGemini, "gemini"},
+		{models.EngineOpenCode, "opencode"},
+		{models.EngineCopilot, "copilot"},
+	}
+
+	for _, e := range engineOrder {
+		// Check if model exists in this engine's configuration
+		if s.config.GetModelForEngine(string(e.engine), modelID) != nil {
+			// Check if binary is installed
+			if _, err := exec.LookPath(e.binaryName); err == nil {
+				return e.engine
+			}
+		}
+	}
+
+	return ""
+}
+
 func (s *Server) getToolDefinitions() []Tool {
 	// Get available personas for dynamic description
 	personas := s.orchestrator.ListPersonas()
@@ -40,25 +74,59 @@ func (s *Server) getToolDefinitions() []Tool {
 		personaDesc += fmt.Sprintf(". Available personas: %v", personas)
 	}
 
+	// Build dynamic model description
+	modelDesc := "AI model to use. Available models depend on the selected engine. "
+	if s.config.Engines != nil && len(s.config.Engines) > 0 {
+		modelDesc += "Models by engine: "
+		for engineName := range s.config.Engines {
+			modelDesc += fmt.Sprintf("%s: %v; ", engineName, s.config.GetModelIDsForEngine(engineName))
+		}
+	} else if len(s.config.Models) > 0 {
+		modelDesc += fmt.Sprintf("Available: %v", s.config.GetModelIDsForEngine(""))
+	}
+
+	// Get all model IDs for enum (for backward compatibility with clients that expect it)
+	allModels := make(map[string]bool)
+	if s.config.Engines != nil {
+		for engineName := range s.config.Engines {
+			for _, modelID := range s.config.GetModelIDsForEngine(engineName) {
+				allModels[modelID] = true
+			}
+		}
+	}
+	// Add global models
+	for _, modelID := range s.config.GetModelIDsForEngine("") {
+		allModels[modelID] = true
+	}
+	modelEnum := make([]string, 0, len(allModels))
+	for modelID := range allModels {
+		modelEnum = append(modelEnum, modelID)
+	}
+
 	return []Tool{
 		{
 			Name:        "spawn_agent",
-			Description: "Spawn a new CLI agent to execute a task. The agent runs in the specified working directory with full tool access. Use background=true for long-running tasks.",
+			Description: "Spawn a new CLI agent to execute a task. Supports multiple engines: 'copilot' (GitHub Copilot CLI, default), 'claude-code' (Anthropic Claude CLI), 'gemini-cli' (Google Gemini CLI), or 'opencode' (OpenCode.ai CLI). The agent runs in the specified working directory with full tool access. Use background=true for long-running tasks.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"prompt": map[string]interface{}{
 						"type":        "string",
-						"description": "The prompt/instruction for the Copilot agent to execute",
+						"description": "The prompt/instruction for the agent to execute",
 					},
 					"work_dir": map[string]interface{}{
 						"type":        "string",
 						"description": "Working directory for the agent (absolute path)",
 					},
+					"engine": map[string]interface{}{
+						"type":        "string",
+						"description": "CLI engine to use: 'copilot' (GitHub Copilot CLI, default), 'claude-code' (Anthropic Claude CLI), 'gemini-cli' (Google Gemini CLI), or 'opencode' (OpenCode.ai CLI). If not specified but model is provided, engine will be auto-detected based on the model configuration.",
+						"enum":        []string{"copilot", "claude-code", "gemini-cli", "opencode"},
+					},
 					"model": map[string]interface{}{
 						"type":        "string",
-						"description": "AI model to use (e.g., claude-sonnet-4, gpt-5.1-codex)",
-						"enum":        []string{"claude-sonnet-4.5", "claude-haiku-4.5", "claude-opus-4.5", "claude-sonnet-4", "gpt-5.1-codex-max", "gpt-5.1-codex", "gpt-5.2", "gpt-5.1", "gpt-5", "gpt-5.1-codex-mini", "gpt-5-mini", "gpt-4.1", "gemini-3-pro-preview"},
+						"description": modelDesc,
+						"enum":        modelEnum,
 					},
 					"background": map[string]interface{}{
 						"type":        "boolean",
@@ -318,6 +386,7 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 	var req struct {
 		Prompt       string   `json:"prompt"`
 		WorkDir      string   `json:"work_dir"`
+		Engine       string   `json:"engine"`
 		Model        string   `json:"model"`
 		Background   *bool    `json:"background"`
 		Timeout      string   `json:"timeout"`
@@ -342,9 +411,27 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 		background = *req.Background
 	}
 
+	// Map tool engine names to internal engine names
+	// Tool uses "claude-code" and "gemini-cli" for disambiguation
+	// but internally we use "claude" and "gemini"
+	engineName := req.Engine
+	switch engineName {
+	case "claude-code":
+		engineName = "claude"
+	case "gemini-cli":
+		engineName = "gemini"
+	}
+
+	// Auto-detect engine based on model if engine not specified
+	engine := models.Engine(engineName)
+	if engine == "" && req.Model != "" {
+		engine = s.detectEngineForModel(req.Model)
+	}
+
 	task, err := s.orchestrator.Spawn(ctx, models.SpawnRequest{
 		Prompt:       req.Prompt,
 		WorkDir:      req.WorkDir,
+		Engine:       engine,
 		Model:        req.Model,
 		Background:   background,
 		Timeout:      req.Timeout,
@@ -371,6 +458,16 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 		result["exit_code"] = task.ExitCode
 		if task.Error != "" {
 			result["error"] = task.Error
+			
+			// If there was an error, include available models for the engine to help retry
+			if engine != "" {
+				availableModels := s.config.GetModelIDsForEngine(string(engine))
+				if len(availableModels) > 0 {
+					result["available_models"] = availableModels
+					result["engine"] = string(engine)
+					result["suggestion"] = fmt.Sprintf("Try one of these models for engine '%s': %v", engine, availableModels)
+				}
+			}
 		}
 	}
 
@@ -391,7 +488,20 @@ func (s *Server) toolGetTask(ctx context.Context, params json.RawMessage) (inter
 		return nil, err
 	}
 
-	return task, nil
+	// If task failed and has an engine, include available models for retry
+	result := map[string]interface{}{
+		"task": task,
+	}
+	
+	if task.Status == models.TaskStatusFailed && task.Engine != "" {
+		availableModels := s.config.GetModelIDsForEngine(string(task.Engine))
+		if len(availableModels) > 0 {
+			result["available_models"] = availableModels
+			result["suggestion"] = fmt.Sprintf("Task failed. Try one of these models for engine '%s': %v", task.Engine, availableModels)
+		}
+	}
+
+	return result, nil
 }
 
 func (s *Server) toolListTasks(ctx context.Context, params json.RawMessage) (interface{}, error) {
