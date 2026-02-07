@@ -29,11 +29,15 @@ const (
 	EngineGemini Engine = "gemini"
 	// EngineOpenCode uses OpenCode.ai CLI.
 	EngineOpenCode Engine = "opencode"
+	// EngineOllamaClaude uses Ollama with Claude integration.
+	EngineOllamaClaude Engine = "ollama-claude"
+	// EngineOllamaOpenCode uses Ollama with OpenCode integration.
+	EngineOllamaOpenCode Engine = "ollama-opencode"
 )
 
 // ValidEngine checks if an engine is valid.
 func ValidEngine(e Engine) bool {
-	return e == EngineCopilot || e == EngineClaude || e == EngineGemini || e == EngineOpenCode || e == ""
+	return e == EngineCopilot || e == EngineClaude || e == EngineGemini || e == EngineOpenCode || e == EngineOllamaClaude || e == EngineOllamaOpenCode || e == ""
 }
 
 // DefaultEngine returns the default engine.

@@ -106,7 +106,7 @@ func (s *Server) getToolDefinitions() []Tool {
 	return []Tool{
 		{
 			Name:        "spawn_agent",
-			Description: "Spawn a new CLI agent to execute a task. Supports multiple engines: 'copilot' (GitHub Copilot CLI, default), 'claude-code' (Anthropic Claude CLI), 'gemini-cli' (Google Gemini CLI), or 'opencode' (OpenCode.ai CLI). The agent runs in the specified working directory with full tool access. Use background=true for long-running tasks.",
+			Description: "Spawn a new CLI agent to execute a task. Supports multiple engines: 'copilot' (GitHub Copilot CLI, default), 'claude-code' (Anthropic Claude CLI), 'gemini-cli' (Google Gemini CLI), 'opencode' (OpenCode.ai CLI), 'ollama-claude' (Ollama Claude interface), or 'ollama-opencode' (Ollama OpenCode interface). The agent runs in the specified working directory with full tool access. Use background=true for long-running tasks.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -120,8 +120,8 @@ func (s *Server) getToolDefinitions() []Tool {
 					},
 					"engine": map[string]interface{}{
 						"type":        "string",
-						"description": "CLI engine to use: 'copilot' (GitHub Copilot CLI, default), 'claude-code' (Anthropic Claude CLI), 'gemini-cli' (Google Gemini CLI), or 'opencode' (OpenCode.ai CLI). If not specified but model is provided, engine will be auto-detected based on the model configuration.",
-						"enum":        []string{"copilot", "claude-code", "gemini-cli", "opencode"},
+						"description": "CLI engine to use: 'copilot' (GitHub Copilot CLI, default), 'claude-code' (Anthropic Claude CLI), 'gemini-cli' (Google Gemini CLI), 'opencode' (OpenCode.ai CLI), 'ollama-claude' (Ollama Claude interface), or 'ollama-opencode' (Ollama OpenCode interface). If not specified but model is provided, engine will be auto-detected based on the model configuration.",
+						"enum":        []string{"copilot", "claude-code", "gemini-cli", "opencode", "ollama-claude", "ollama-opencode"},
 					},
 					"model": map[string]interface{}{
 						"type":        "string",

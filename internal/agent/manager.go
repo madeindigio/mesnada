@@ -11,22 +11,26 @@ import (
 
 // Manager coordinates multiple engine spawners.
 type Manager struct {
-	copilotSpawner  *CopilotSpawner
-	claudeSpawner   *ClaudeSpawner
-	geminiSpawner   *GeminiSpawner
-	opencodeSpawner *OpenCodeSpawner
-	taskEngines     map[string]models.Engine // Maps task ID to engine
-	mu              sync.RWMutex
+	copilotSpawner         *CopilotSpawner
+	claudeSpawner          *ClaudeSpawner
+	geminiSpawner          *GeminiSpawner
+	opencodeSpawner        *OpenCodeSpawner
+	ollamaClaudeSpawner    *OllamaClaudeSpawner
+	ollamaOpenCodeSpawner  *OllamaOpenCodeSpawner
+	taskEngines            map[string]models.Engine // Maps task ID to engine
+	mu                     sync.RWMutex
 }
 
 // NewManager creates a new agent manager.
 func NewManager(logDir string, onComplete func(task *models.Task)) *Manager {
 	return &Manager{
-		copilotSpawner:  NewCopilotSpawner(logDir, onComplete),
-		claudeSpawner:   NewClaudeSpawner(logDir, onComplete),
-		geminiSpawner:   NewGeminiSpawner(logDir, onComplete),
-		opencodeSpawner: NewOpenCodeSpawner(logDir, onComplete),
-		taskEngines:     make(map[string]models.Engine),
+		copilotSpawner:        NewCopilotSpawner(logDir, onComplete),
+		claudeSpawner:         NewClaudeSpawner(logDir, onComplete),
+		geminiSpawner:         NewGeminiSpawner(logDir, onComplete),
+		opencodeSpawner:       NewOpenCodeSpawner(logDir, onComplete),
+		ollamaClaudeSpawner:   NewOllamaClaudeSpawner(logDir, onComplete),
+		ollamaOpenCodeSpawner: NewOllamaOpenCodeSpawner(logDir, onComplete),
+		taskEngines:           make(map[string]models.Engine),
 	}
 }
 
@@ -49,6 +53,10 @@ func (m *Manager) Spawn(ctx context.Context, task *models.Task) error {
 		return m.geminiSpawner.Spawn(ctx, task)
 	case models.EngineOpenCode:
 		return m.opencodeSpawner.Spawn(ctx, task)
+	case models.EngineOllamaClaude:
+		return m.ollamaClaudeSpawner.Spawn(ctx, task)
+	case models.EngineOllamaOpenCode:
+		return m.ollamaOpenCodeSpawner.Spawn(ctx, task)
 	case models.EngineCopilot:
 		return m.copilotSpawner.Spawn(ctx, task)
 	default:
@@ -67,6 +75,10 @@ func (m *Manager) Cancel(taskID string) error {
 		return m.geminiSpawner.Cancel(taskID)
 	case models.EngineOpenCode:
 		return m.opencodeSpawner.Cancel(taskID)
+	case models.EngineOllamaClaude:
+		return m.ollamaClaudeSpawner.Cancel(taskID)
+	case models.EngineOllamaOpenCode:
+		return m.ollamaOpenCodeSpawner.Cancel(taskID)
 	default:
 		return m.copilotSpawner.Cancel(taskID)
 	}
@@ -83,6 +95,10 @@ func (m *Manager) Pause(taskID string) error {
 		return m.geminiSpawner.Pause(taskID)
 	case models.EngineOpenCode:
 		return m.opencodeSpawner.Pause(taskID)
+	case models.EngineOllamaClaude:
+		return m.ollamaClaudeSpawner.Cancel(taskID)
+	case models.EngineOllamaOpenCode:
+		return m.ollamaOpenCodeSpawner.Cancel(taskID)
 	default:
 		return m.copilotSpawner.Pause(taskID)
 	}
@@ -99,6 +115,12 @@ func (m *Manager) Wait(ctx context.Context, taskID string) error {
 		return m.geminiSpawner.Wait(ctx, taskID)
 	case models.EngineOpenCode:
 		return m.opencodeSpawner.Wait(ctx, taskID)
+	case models.EngineOllamaClaude:
+		// Wait not implemented for ollama spawners, return nil
+		return nil
+	case models.EngineOllamaOpenCode:
+		// Wait not implemented for ollama spawners, return nil
+		return nil
 	default:
 		return m.copilotSpawner.Wait(ctx, taskID)
 	}
@@ -115,6 +137,10 @@ func (m *Manager) IsRunning(taskID string) bool {
 		return m.geminiSpawner.IsRunning(taskID)
 	case models.EngineOpenCode:
 		return m.opencodeSpawner.IsRunning(taskID)
+	case models.EngineOllamaClaude:
+		return m.ollamaClaudeSpawner.IsRunning(taskID)
+	case models.EngineOllamaOpenCode:
+		return m.ollamaOpenCodeSpawner.IsRunning(taskID)
 	default:
 		return m.copilotSpawner.IsRunning(taskID)
 	}
@@ -122,10 +148,21 @@ func (m *Manager) IsRunning(taskID string) bool {
 
 // RunningCount returns the total number of currently running processes.
 func (m *Manager) RunningCount() int {
-	return m.copilotSpawner.RunningCount() +
+	count := m.copilotSpawner.RunningCount() +
 		m.claudeSpawner.RunningCount() +
 		m.geminiSpawner.RunningCount() +
 		m.opencodeSpawner.RunningCount()
+	
+	// Count ollama spawners processes
+	m.ollamaClaudeSpawner.mu.RLock()
+	count += len(m.ollamaClaudeSpawner.processes)
+	m.ollamaClaudeSpawner.mu.RUnlock()
+	
+	m.ollamaOpenCodeSpawner.mu.RLock()
+	count += len(m.ollamaOpenCodeSpawner.processes)
+	m.ollamaOpenCodeSpawner.mu.RUnlock()
+	
+	return count
 }
 
 // Shutdown cancels all running processes.
@@ -134,6 +171,8 @@ func (m *Manager) Shutdown() {
 	m.claudeSpawner.Shutdown()
 	m.geminiSpawner.Shutdown()
 	m.opencodeSpawner.Shutdown()
+	m.ollamaClaudeSpawner.Cleanup()
+	m.ollamaOpenCodeSpawner.Cleanup()
 }
 
 // getTaskEngine returns the engine used for a task.
@@ -164,7 +203,7 @@ func (m *Manager) GetProcess(taskID string) (*Process, bool) {
 func ValidateEngine(engine string) error {
 	e := models.Engine(engine)
 	if e != "" && !models.ValidEngine(e) {
-		return fmt.Errorf("invalid engine: %s (valid: copilot, claude, gemini, opencode)", engine)
+		return fmt.Errorf("invalid engine: %s (valid: copilot, claude, gemini, opencode, ollama-claude, ollama-opencode)", engine)
 	}
 	return nil
 }

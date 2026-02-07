@@ -89,10 +89,8 @@ func (s *ClaudeSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	cmd := exec.CommandContext(procCtx, "claude", args...)
 	cmd.Dir = task.WorkDir
 
-	// Set up environment
-	cmd.Env = append(os.Environ(),
-		"NO_COLOR=1",
-	)
+	// Set up environment with Claude Code configuration
+	cmd.Env = append(os.Environ(), "NO_COLOR=1")
 
 	// Create log file
 	logPath := filepath.Join(s.logDir, fmt.Sprintf("%s.log", task.ID))
@@ -169,25 +167,23 @@ func (s *ClaudeSpawner) buildArgs(task *models.Task, mcpConfigPath string) []str
 	// Prepend task_id to the prompt
 	promptWithTaskID := fmt.Sprintf("You are the task_id: %s\n\n%s", task.ID, task.Prompt)
 
-	args := []string{
-		"-p",                      // Print/headless mode
-		"--output-format", "text", // Plain text output (default, human-readable)
-		"--dangerously-skip-permissions", // Skip permission prompts for automation
-		"--verbose",                      // Full output
-	}
+	// Only pass model and prompt as arguments
+	// Other configuration is passed via environment variables
+	args := []string{"--print", "--output-format", "text", "--verbose", "--dangerously-skip-permissions"}
 
 	if task.Model != "" {
 		args = append(args, "--model", task.Model)
 	}
 
-	args = append(args, task.ExtraArgs...)
-
-	// Add the prompt BEFORE --mcp-config to avoid path concatenation issues
-	args = append(args, promptWithTaskID)
-
 	if mcpConfigPath != "" {
 		args = append(args, "--mcp-config", mcpConfigPath)
 	}
+
+	// Add extra args if needed (but most should be env vars now)
+	args = append(args, task.ExtraArgs...)
+
+	// Add ttermin prompt as the final argument
+	args = append(args, promptWithTaskID)
 
 	// Store the modified prompt
 	task.Prompt = promptWithTaskID

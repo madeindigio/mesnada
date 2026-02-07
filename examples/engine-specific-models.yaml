@@ -63,6 +63,36 @@ engines:
       - id: "gpt-5.1-codex"
         description: "GPT via OpenCode"
 
+  # Ollama with Claude integration - Local models via Claude interface
+  ollama-claude:
+    default_model: "deepseek-r1:latest"
+    models:
+      - id: "deepseek-r1:latest"
+        description: "DeepSeek-R1 for reasoning tasks"
+      - id: "deepseek-r1:14b-qwen-distill-q8_0"
+        description: "DeepSeek-R1 14B distilled version"
+      - id: "gpt-oss:latest"
+        description: "GPT-OSS open source model"
+      - id: "glm-4.7-tools:latest"
+        description: "GLM-4.7 with tool support"
+      - id: "hf.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_K_M"
+        description: "Qwen3 Coder for advanced coding"
+
+  # Ollama with OpenCode integration - Local models via OpenCode interface
+  ollama-opencode:
+    default_model: "deepseek-r1:latest"
+    models:
+      - id: "deepseek-r1:latest"
+        description: "DeepSeek-R1 for reasoning tasks"
+      - id: "deepseek-r1:14b-qwen-distill-q8_0"
+        description: "DeepSeek-R1 14B distilled version"
+      - id: "gpt-oss:latest"
+        description: "GPT-OSS open source model"
+      - id: "glm-4.7-tools:latest"
+        description: "GLM-4.7 with tool support"
+      - id: "hf.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_K_M"
+        description: "Qwen3 Coder for advanced coding"
+
 server:
   host: "127.0.0.1"
   port: 8765

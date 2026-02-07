@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Ollama integration engines**: New `ollama-claude` and `ollama-opencode` engines that allow running local Ollama models through Claude and OpenCode interfaces
+  - `ollama-claude`: Executes `ollama launch claude --model <model>` with Claude's MCP configuration
+  - `ollama-opencode`: Executes `ollama launch opencode --model <model>` with OpenCode's MCP configuration
+  - Support for all Ollama models including DeepSeek-R1, GPT-OSS, GLM-4.7-tools, Qwen3-Coder, and more
+  - Automatic MCP config conversion for engine-specific formats
 - **Engine parameter in spawn_agent**: New `engine` parameter in the MCP `spawn_agent` tool with disambiguated enum: 'copilot', 'claude-code' (executes `claude`), 'gemini-cli' (executes `gemini`), 'opencode'
 - **Auto-detection of engine**: If engine is not specified but model is, the system automatically detects which engine to use based on model configuration and verifies the binary is installed
 - **Dynamic model description**: The `model` parameter description in `spawn_agent` is now dynamically generated from YAML configuration, showing available models for each engine

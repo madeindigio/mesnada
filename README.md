@@ -64,6 +64,34 @@ cp config.example.yaml ~/.mesnada/config.yaml
 # Edit the file as needed
 ```
 
+### Supported Engines
+
+Mesnada supports multiple AI CLI engines for executing agents:
+
+- **copilot** (default): GitHub Copilot CLI
+- **claude**: Anthropic Claude CLI
+- **gemini**: Google Gemini CLI
+- **opencode**: OpenCode.ai CLI
+- **ollama-claude**: Ollama models with Claude interface (`ollama launch claude`)
+- **ollama-opencode**: Ollama models with OpenCode interface (`ollama launch opencode`)
+
+Each engine can have its own set of models and default model. Engine-specific configurations can be defined in the YAML config file:
+
+```yaml
+engines:
+  ollama-claude:
+    default_model: "deepseek-r1:latest"
+    models:
+      - id: "deepseek-r1:latest"
+        description: "DeepSeek-R1 for reasoning tasks"
+      - id: "glm-4.7-tools:latest"
+        description: "GLM-4.7 with tool support"
+      - id: "hf.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_K_M"
+        description: "Qwen3 Coder for advanced coding"
+```
+
+The Ollama engines allow you to run local models using the Ollama platform while benefiting from the Claude or OpenCode interface features.
+
 ## Usage
 
 ### Start the server

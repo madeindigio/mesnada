@@ -108,6 +108,30 @@ engines:
       - id: "openrouter/qwen/qwen3-coder"
         description: "It is a powerful coding agent model specializing in autonomous programming via tool calling and environment interaction, combining coding proficiency with versatile general-purpose abilities"
 
+  ollama-claude:
+    default_model: "deepseek-r1:latest"
+    models:
+      - id: "deepseek-r1:latest"
+        description: "DeepSeek-R1 latest version for reasoning tasks"
+      - id: "gpt-oss:latest"
+        description: "GPT-OSS open source model"
+      - id: "glm-4.7-tools:latest"
+        description: "GLM-4.7 with tool support"
+      - id: "hf.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_K_M"
+        description: "Qwen3 Coder 30B for advanced coding tasks"
+
+  ollama-opencode:
+    default_model: "deepseek-r1:latest"
+    models:
+      - id: "deepseek-r1:latest"
+        description: "DeepSeek-R1 latest version for reasoning tasks"
+      - id: "gpt-oss:latest"
+        description: "GPT-OSS open source model"
+      - id: "glm-4.7-tools:latest"
+        description: "GLM-4.7 with tool support"
+      - id: "hf.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_K_M"
+        description: "Qwen3 Coder 30B for advanced coding tasks"
+
 # Server configuration
 server:
   host: "127.0.0.1"
