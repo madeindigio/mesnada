@@ -91,14 +91,12 @@ func (s *GeminiSpawner) Spawn(ctx context.Context, task *models.Task) error {
 
 	cmd.Env = env
 
-	// Create log file
-	logPath := filepath.Join(s.logDir, fmt.Sprintf("%s.log", task.ID))
-	logFile, err := os.Create(logPath)
+	// Create or append to log file
+	logFile, err := openOrCreateLogFile(s.logDir, task)
 	if err != nil {
 		cancel()
-		return fmt.Errorf("failed to create log file: %w", err)
+		return err
 	}
-	task.LogFile = logPath
 
 	// Set up output capture
 	output := &strings.Builder{}

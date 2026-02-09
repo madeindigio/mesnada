@@ -174,6 +174,7 @@ type SpawnRequest struct {
 	Background            bool     `json:"background"`
 	IncludeDependencyLogs bool     `json:"include_dependency_logs,omitempty"`
 	DependencyLogLines    int      `json:"dependency_log_lines,omitempty"`
+	LogFile               string   `json:"log_file,omitempty"`
 }
 
 // WaitRequest represents a request to wait for task completion.

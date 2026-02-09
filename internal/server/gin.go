@@ -76,6 +76,7 @@ func (s *Server) newGinEngine() *gin.Engine {
 		api.GET("/tasks/:id/log", s.handleAPITaskLog)
 		api.POST("/tasks/:id/pause", s.handleAPITaskPause)
 		api.POST("/tasks/:id/resume", s.handleAPITaskResume)
+		api.POST("/tasks/:id/retry", s.handleAPITaskRetry)
 		api.DELETE("/tasks/:id", s.handleAPITaskDelete)
 		api.DELETE("/tasks/:id/purge", s.handleAPITaskPurge)
 	}
@@ -196,6 +197,35 @@ func (s *Server) handleAPITaskResume(c *gin.Context) {
 		Background: background,
 		Timeout:    req.Timeout,
 		Tags:       req.Tags,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"task": task})
+}
+
+func (s *Server) handleAPITaskRetry(c *gin.Context) {
+	id := c.Param("id")
+	var req struct {
+		Background *bool `json:"background"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	background := true
+	if req.Background != nil {
+		background = *req.Background
+	}
+
+	task, err := s.orchestrator.Retry(c.Request.Context(), id, orchestrator.RetryOptions{
+		Background: background,
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {

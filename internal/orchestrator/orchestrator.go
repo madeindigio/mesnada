@@ -269,6 +269,11 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 		CreatedAt:    time.Now(),
 	}
 
+	// Inherit log file from previous task (retry scenario).
+	if req.LogFile != "" {
+		task.LogFile = req.LogFile
+	}
+
 	logTaskReceived(task)
 
 	// Save task
@@ -534,6 +539,70 @@ func (o *Orchestrator) Resume(ctx context.Context, taskID string, opts ResumeOpt
 		ExtraArgs:    prev.ExtraArgs,
 		Background:   opts.Background,
 	})
+}
+
+// RetryOptions controls how a failed or pending task is retried.
+type RetryOptions struct {
+	Background bool
+}
+
+// Retry relaunches a failed task or reactivates a pending task.
+// For failed tasks, it creates a new task reusing the same log file (append mode)
+// with the original prompt plus a retry notice.
+// For pending tasks, it checks dependencies and starts the task if ready.
+func (o *Orchestrator) Retry(ctx context.Context, taskID string, opts RetryOptions) (*models.Task, error) {
+	prev, err := o.store.Get(taskID)
+	if err != nil {
+		return nil, err
+	}
+
+	switch prev.Status {
+	case models.TaskStatusFailed:
+		return o.retryFailed(ctx, prev, opts)
+	case models.TaskStatusPending:
+		return o.replayPending(prev)
+	default:
+		return nil, fmt.Errorf("task %s cannot be retried (status=%s)", taskID, prev.Status)
+	}
+}
+
+func (o *Orchestrator) retryFailed(ctx context.Context, prev *models.Task, opts RetryOptions) (*models.Task, error) {
+	retryPrompt := fmt.Sprintf(
+		"%s\n\n[RETRY] This task has been retried from a previous failed execution (task_id: %s). Check the previous log at: %s and verify the current state before continuing.",
+		prev.Prompt,
+		prev.ID,
+		prev.LogFile,
+	)
+
+	model := prev.Model
+	timeout := ""
+	if prev.Timeout > 0 {
+		timeout = time.Duration(prev.Timeout).String()
+	}
+
+	return o.Spawn(ctx, models.SpawnRequest{
+		Prompt:       retryPrompt,
+		WorkDir:      prev.WorkDir,
+		Engine:       prev.Engine,
+		Model:        model,
+		Dependencies: prev.Dependencies,
+		Tags:         prev.Tags,
+		Priority:     prev.Priority,
+		Timeout:      timeout,
+		MCPConfig:    prev.MCPConfig,
+		ExtraArgs:    prev.ExtraArgs,
+		Persona:      prev.Persona,
+		Background:   opts.Background,
+		LogFile:      prev.LogFile,
+	})
+}
+
+func (o *Orchestrator) replayPending(prev *models.Task) (*models.Task, error) {
+	if o.canStart(prev) {
+		logTaskStartable(prev, "replay_dependencies_satisfied")
+		go o.startTask(prev)
+	}
+	return prev, nil
 }
 
 // Delete removes a task from the store.

@@ -878,6 +878,71 @@
                         this.resumePrompt = "";
                     },
 
+                    async retryTask(taskId) {
+                        if (!taskId) return;
+                        try {
+                            const res = await fetch(
+                                `/api/tasks/${encodeURIComponent(taskId)}/retry`,
+                                {
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type": "application/json",
+                                    },
+                                    body: JSON.stringify({
+                                        background: true,
+                                    }),
+                                },
+                            );
+                            const data = await res.json().catch(() => null);
+                            if (!res.ok) {
+                                const err =
+                                    data && data.error
+                                        ? data.error
+                                        : `retry failed (${res.status})`;
+                                throw new Error(err);
+                            }
+                            const newId = data && data.task && data.task.id;
+                            this.refreshTasks();
+                            if (newId) {
+                                this.showPanel(newId);
+                            }
+                        } catch (e) {
+                            alert(`Retry failed: ${e.message || e}`);
+                        }
+                    },
+
+                    async replayTask(taskId) {
+                        if (!taskId) return;
+                        try {
+                            const res = await fetch(
+                                `/api/tasks/${encodeURIComponent(taskId)}/retry`,
+                                {
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type": "application/json",
+                                    },
+                                    body: JSON.stringify({
+                                        background: true,
+                                    }),
+                                },
+                            );
+                            const data = await res.json().catch(() => null);
+                            if (!res.ok) {
+                                const err =
+                                    data && data.error
+                                        ? data.error
+                                        : `replay failed (${res.status})`;
+                                throw new Error(err);
+                            }
+                            this.refreshTasks();
+                            const id =
+                                data && data.task ? data.task.id : taskId;
+                            this.showPanel(id);
+                        } catch (e) {
+                            alert(`Replay failed: ${e.message || e}`);
+                        }
+                    },
+
                     async submitResume() {
                         const taskId = this.resumeTaskId;
                         const prompt = (this.resumePrompt || "").trim();

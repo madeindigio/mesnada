@@ -111,12 +111,11 @@ func (s *OllamaClaudeSpawner) Spawn(ctx context.Context, task *models.Task) erro
 
 	cmd.Env = env
 
-	// Create log file
-	logPath := filepath.Join(s.logDir, fmt.Sprintf("%s.log", task.ID))
-	logFile, err := os.Create(logPath)
+	// Create or append to log file
+	logFile, err := openOrCreateLogFile(s.logDir, task)
 	if err != nil {
 		cancel()
-		return fmt.Errorf("create log file: %w", err)
+		return err
 	}
 
 	// Set up output capture

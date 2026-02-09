@@ -24,6 +24,29 @@ const (
 	maxOutputCapture = 1024 * 1024 // 1MB max output capture
 )
 
+// openOrCreateLogFile opens an existing log file in append mode (for retries)
+// or creates a new one. When appending, it writes a retry separator.
+func openOrCreateLogFile(logDir string, task *models.Task) (*os.File, error) {
+	if task.LogFile != "" {
+		// Retry: append to existing log file
+		f, err := os.OpenFile(task.LogFile, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open log file for append: %w", err)
+		}
+		separator := fmt.Sprintf("\n\n=== RETRY %s (new task: %s) ===\n\n", time.Now().Format(time.RFC3339), task.ID)
+		f.WriteString(separator)
+		return f, nil
+	}
+	// New task: create fresh log file
+	logPath := filepath.Join(logDir, fmt.Sprintf("%s.log", task.ID))
+	f, err := os.Create(logPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create log file: %w", err)
+	}
+	task.LogFile = logPath
+	return f, nil
+}
+
 // CopilotSpawner manages Copilot CLI process spawning.
 type CopilotSpawner struct {
 	logDir     string
@@ -82,14 +105,12 @@ func (s *CopilotSpawner) Spawn(ctx context.Context, task *models.Task) error {
 		"NO_COLOR=1",
 	)
 
-	// Create log file
-	logPath := filepath.Join(s.logDir, fmt.Sprintf("%s.log", task.ID))
-	logFile, err := os.Create(logPath)
+	// Create or append to log file
+	logFile, err := openOrCreateLogFile(s.logDir, task)
 	if err != nil {
 		cancel()
-		return fmt.Errorf("failed to create log file: %w", err)
+		return err
 	}
-	task.LogFile = logPath
 
 	// Set up output capture
 	output := &strings.Builder{}
