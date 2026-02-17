@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -19,6 +20,13 @@ import (
 
 	"github.com/sevir/mesnada/pkg/models"
 )
+
+// ansiEscape matches ANSI escape sequences (colors, cursor movement, etc.)
+var ansiEscape = regexp.MustCompile(`\x1b(?:[@-Z\\\-_]|\[[0-9;?]*[ -/]*[@-~])`)
+
+func stripANSI(s string) string {
+	return ansiEscape.ReplaceAllString(s, "")
+}
 
 // MistralSpawner manages Mistral Vibe CLI process spawning.
 type MistralSpawner struct {
@@ -140,6 +148,14 @@ func createVibeTempHome(mcpConfigPath, taskID, baseDir, workDir, model string) (
 		return "", fmt.Errorf("failed to write vibe config.toml: %w", err)
 	}
 
+	// Copy .env (API key) from the real ~/.vibe/ so vibe doesn't start the onboarding wizard.
+	if home, err := os.UserHomeDir(); err == nil {
+		realEnv := filepath.Join(home, ".vibe", ".env")
+		if data, err := os.ReadFile(realEnv); err == nil {
+			_ = os.WriteFile(filepath.Join(tempDir, ".env"), data, 0600)
+		}
+	}
+
 	return tempDir, nil
 }
 
@@ -165,7 +181,11 @@ func (s *MistralSpawner) Spawn(ctx context.Context, task *models.Task) error {
 		cmd.Dir = task.WorkDir
 	}
 
-	env := append(os.Environ(), "NO_COLOR=1")
+	env := append(os.Environ(),
+		"NO_COLOR=1",
+		"FORCE_COLOR=0",
+		"TERM=dumb",
+	)
 	if vibeHome != "" {
 		env = append(env, "VIBE_HOME="+vibeHome)
 	}
@@ -237,8 +257,10 @@ func (s *MistralSpawner) Spawn(ctx context.Context, task *models.Task) error {
 func (s *MistralSpawner) buildArgs(task *models.Task) []string {
 	promptWithTaskID := fmt.Sprintf("You are the task_id: %s\n\n%s", task.ID, task.Prompt)
 
+	// Store modified prompt on task for reference
+	task.Prompt = promptWithTaskID
+
 	args := []string{
-		"--agent", "auto-approve",
 		"--output", "text",
 	}
 
@@ -248,9 +270,9 @@ func (s *MistralSpawner) buildArgs(task *models.Task) []string {
 
 	args = append(args, task.ExtraArgs...)
 
-	args = append(args, "--prompt", promptWithTaskID)
-
-	task.Prompt = promptWithTaskID
+	// Pass prompt directly via --prompt flag to enable non-interactive (programmatic) mode.
+	// By default, --prompt already runs with auto-approve enabled.
+	args = append(args, "--prompt", task.Prompt)
 
 	return args
 }
@@ -266,7 +288,7 @@ func (s *MistralSpawner) captureOutput(proc *MistralProcess, stdout, stderr io.R
 		scanner.Buffer(buf, 1024*1024)
 
 		for scanner.Scan() {
-			line := scanner.Text()
+			line := stripANSI(scanner.Text())
 			fmt.Fprintf(proc.logFile, "%s\n", line)
 			if proc.output.Len() < maxOutputCapture {
 				proc.output.WriteString(line)
@@ -282,7 +304,7 @@ func (s *MistralSpawner) captureOutput(proc *MistralProcess, stdout, stderr io.R
 		scanner.Buffer(buf, 1024*1024)
 
 		for scanner.Scan() {
-			line := scanner.Text()
+			line := stripANSI(scanner.Text())
 			fmt.Fprintf(proc.logFile, "[stderr] %s\n", line)
 			if proc.output.Len() < maxOutputCapture {
 				proc.output.WriteString("[stderr] ")
