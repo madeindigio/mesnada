@@ -220,9 +220,17 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 	}
 
 	// Apply orchestrator default MCP config when not explicitly provided.
+	// Priority: explicit request > persona-specific config > global default.
 	mcpConfig := req.MCPConfig
 	if mcpConfig == "" {
-		mcpConfig = o.defaultMCPConfig
+		if req.Persona != "" {
+			if personaMCPConfig := o.personaManager.GetPersonaMCPConfig(req.Persona); personaMCPConfig != "" {
+				mcpConfig = personaMCPConfig
+			}
+		}
+		if mcpConfig == "" {
+			mcpConfig = o.defaultMCPConfig
+		}
 	}
 
 	// Apply orchestrator default engine when not explicitly provided.

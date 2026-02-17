@@ -11,17 +11,19 @@ import (
 
 // Manager handles persona loading and retrieval.
 type Manager struct {
-	personaPath string
-	personas    map[string]string // name -> content
-	mu          sync.RWMutex
+	personaPath      string
+	personas         map[string]string // name -> content
+	personaMCPConfig map[string]string // name -> mcp-config.json path
+	mu               sync.RWMutex
 }
 
 // NewManager creates a new persona manager.
 // If personaPath is empty, creates an empty manager.
 func NewManager(personaPath string) (*Manager, error) {
 	m := &Manager{
-		personaPath: personaPath,
-		personas:    make(map[string]string),
+		personaPath:      personaPath,
+		personas:         make(map[string]string),
+		personaMCPConfig: make(map[string]string),
 	}
 
 	if personaPath != "" {
@@ -79,6 +81,13 @@ func (m *Manager) loadPersonas() error {
 		}
 
 		m.personas[personaName] = string(content)
+
+		// Check for associated MCP config file: {persona-name}.mcp-config.json
+		mcpConfigName := personaName + ".mcp-config.json"
+		mcpConfigPath := filepath.Join(m.personaPath, mcpConfigName)
+		if _, err := os.Stat(mcpConfigPath); err == nil {
+			m.personaMCPConfig[personaName] = mcpConfigPath
+		}
 	}
 
 	return nil
@@ -122,6 +131,20 @@ func (m *Manager) HasPersona(name string) bool {
 
 	_, exists := m.personas[name]
 	return exists
+}
+
+// GetPersonaMCPConfig returns the path to the persona's associated MCP config file.
+// Returns empty string if the persona has no associated MCP config.
+func (m *Manager) GetPersonaMCPConfig(name string) string {
+	if name == "" {
+		return ""
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	path, _ := m.personaMCPConfig[name]
+	return path
 }
 
 // ApplyPersona prepends persona content to the given prompt.

@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "hyper-mcp": {
+      "command": "hyper-mcp",
+      "args": [
+        "--config-file",
+        "/home/sevir/.config/hyper-mcp/search.yaml"
+      ]
+    },
+    "mycommandmcp": {
+      "command": "mycommandmcp",
+      "args": [
+        "--config",
+        "./.ai/mycommand-mcp.yaml"
+      ]
+    },
+    "remembrances": {
+      "command": "remembrances-mcp-beta",
+      "args": [
+        "--config",
+        "./.ai/remembrances.config.yaml"
+      ]
+    },
+    "mesnada": {
+      "type": "http",
+      "url": "http://127.0.0.1:8766/mcp"
+    }
+  }
+}

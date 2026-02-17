@@ -2,66 +2,66 @@
 
 mesnada is a MCP server implementation written in Go, designed to facilitate the orchestration of subagents in a distributed system using Github Copilot CLI `copilot` for command line. It provides a robust framework for managing communication between the main server and its subagents, ensuring efficient data exchange and coordination.
 
-## Cómo desarrollar
+## How to develop
 
-1. Comprueba que el proyecto está indexado con las tools de code de Remembrances
-Si no lo está, indexa el código de este proyecto
-2. Activa la monitorización de código de Remembrances
-3. Usa la búsqueda híbrida y la búsqueda de código para localizar información relevante para la tarea
-4. Usa las tools de context7 para obtener contexto de cómo funciona una librería que necesites utilizar
-5. Usa las tools de búsqueda en internet con Google, Brave y Perplexity para obtener información adicional si es necesario
+1. Check that the project is indexed with Remembrances code tools.
+If it is not, index the code of this project.
+2. Activate code monitoring with Remembrances.
+3. Use hybrid search and code search to locate relevant information for the task.
+4. Use context7 tools to get context on how a library you need to use works.
+5. Use internet search tools with Google, Brave, and Perplexity to get additional information if necessary.
 
-## Características principales
+## Main Features
 
-### Gestión de modelos
+### Model Management
 
-- **Configuración centralizada**: Define modelos disponibles y sus propósitos en un archivo YAML
-- **Modelo por defecto**: Configura qué modelo usar cuando no se especifica uno
-- **Validación automática**: Verifica que los modelos solicitados estén en la lista de modelos válidos
+- **Centralized configuration**: Define available models and their purposes in a YAML file
+- **Default model**: Configure which model to use when one is not specified
+- **Automatic validation**: Verifies that requested models are in the list of valid models
 
-### Identificación de agentes
+### Agent Identification
 
-Cada agente lanzado recibe automáticamente su `task_id` al inicio del prompt:
+Each launched agent automatically receives its `task_id` at the beginning of the prompt:
 
 ```
 You are the task_id: task-abc12345
 
-[Prompt original del usuario]
+[Original user prompt]
 ```
 
-Esto permite a los agentes:
-- Conocer su propia identidad
-- Reportar progreso usando su task_id
-- Coordinar con otros agentes si es necesario
+This allows agents to:
+- Know their own identity
+- Report progress using their task_id
+- Coordinate with other agents if necessary
 
-### Sistema de progreso
+### Progress System
 
-Los agentes pueden reportar su progreso en tiempo real usando la tool `set_progress`:
+Agents can report their progress in real time using the `set_progress` tool:
 
 ```json
 {
   "task_id": "task-abc12345",
   "percentage": 45,
-  "description": "Procesando archivos 45/100"
+  "description": "Processing files 45/100"
 }
 ```
 
-El sistema:
-- Sanitiza automáticamente los valores de porcentaje (elimina símbolos como "%")
-- Limita valores entre 0 y 100
-- Almacena el progreso con timestamp
-- Expone el progreso en `get_stats` y `get_task`
+The system:
+- Automatically sanitizes percentage values (removes symbols like "%")
+- Limits values between 0 and 100
+- Stores progress with timestamp
+- Exposes progress in `get_stats` and `get_task`
 
-### Comunicación con Copilot CLI
+### Communication with Copilot CLI
 
-Los agentes se lanzan con los siguientes parámetros:
-- `--allow-all-tools`: Acceso completo a todas las tools MCP
-- `--no-color`: Salida sin códigos de color para mejor parsing
-- `--no-custom-instructions`: Sin instrucciones personalizadas del usuario
+Agents are launched with the following parameters:
+- `--allow-all-tools`: Full access to all MCP tools
+- `--no-color`: Output without color codes for better parsing
+- `--no-custom-instructions`: No custom user instructions
 
-El prompt se envía por **stdin** en lugar de como argumento de línea de comandos, permitiendo prompts más largos y complejos.
+The prompt is sent via **stdin** instead of as a command line argument, allowing for longer and more complex prompts.
 
-## Arquitectura
+## Architecture
 
 ```
 ┌─────────────────────┐
