@@ -50,6 +50,7 @@ func (s *Server) detectEngineForModel(modelID string) models.Engine {
 		{models.EngineClaude, "claude"},
 		{models.EngineGemini, "gemini"},
 		{models.EngineOpenCode, "opencode"},
+		{models.EngineMistral, "vibe"},
 		{models.EngineCopilot, "copilot"},
 	}
 

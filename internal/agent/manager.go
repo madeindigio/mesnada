@@ -11,14 +11,15 @@ import (
 
 // Manager coordinates multiple engine spawners.
 type Manager struct {
-	copilotSpawner         *CopilotSpawner
-	claudeSpawner          *ClaudeSpawner
-	geminiSpawner          *GeminiSpawner
-	opencodeSpawner        *OpenCodeSpawner
-	ollamaClaudeSpawner    *OllamaClaudeSpawner
-	ollamaOpenCodeSpawner  *OllamaOpenCodeSpawner
-	taskEngines            map[string]models.Engine // Maps task ID to engine
-	mu                     sync.RWMutex
+	copilotSpawner        *CopilotSpawner
+	claudeSpawner         *ClaudeSpawner
+	geminiSpawner         *GeminiSpawner
+	opencodeSpawner       *OpenCodeSpawner
+	ollamaClaudeSpawner   *OllamaClaudeSpawner
+	ollamaOpenCodeSpawner *OllamaOpenCodeSpawner
+	mistralSpawner        *MistralSpawner
+	taskEngines           map[string]models.Engine // Maps task ID to engine
+	mu                    sync.RWMutex
 }
 
 // NewManager creates a new agent manager.
@@ -30,6 +31,7 @@ func NewManager(logDir string, onComplete func(task *models.Task)) *Manager {
 		opencodeSpawner:       NewOpenCodeSpawner(logDir, onComplete),
 		ollamaClaudeSpawner:   NewOllamaClaudeSpawner(logDir, onComplete),
 		ollamaOpenCodeSpawner: NewOllamaOpenCodeSpawner(logDir, onComplete),
+		mistralSpawner:        NewMistralSpawner(logDir, onComplete),
 		taskEngines:           make(map[string]models.Engine),
 	}
 }
@@ -57,6 +59,8 @@ func (m *Manager) Spawn(ctx context.Context, task *models.Task) error {
 		return m.ollamaClaudeSpawner.Spawn(ctx, task)
 	case models.EngineOllamaOpenCode:
 		return m.ollamaOpenCodeSpawner.Spawn(ctx, task)
+	case models.EngineMistral:
+		return m.mistralSpawner.Spawn(ctx, task)
 	case models.EngineCopilot:
 		return m.copilotSpawner.Spawn(ctx, task)
 	default:
@@ -79,6 +83,8 @@ func (m *Manager) Cancel(taskID string) error {
 		return m.ollamaClaudeSpawner.Cancel(taskID)
 	case models.EngineOllamaOpenCode:
 		return m.ollamaOpenCodeSpawner.Cancel(taskID)
+	case models.EngineMistral:
+		return m.mistralSpawner.Cancel(taskID)
 	default:
 		return m.copilotSpawner.Cancel(taskID)
 	}
@@ -99,6 +105,8 @@ func (m *Manager) Pause(taskID string) error {
 		return m.ollamaClaudeSpawner.Cancel(taskID)
 	case models.EngineOllamaOpenCode:
 		return m.ollamaOpenCodeSpawner.Cancel(taskID)
+	case models.EngineMistral:
+		return m.mistralSpawner.Pause(taskID)
 	default:
 		return m.copilotSpawner.Pause(taskID)
 	}
@@ -121,6 +129,8 @@ func (m *Manager) Wait(ctx context.Context, taskID string) error {
 	case models.EngineOllamaOpenCode:
 		// Wait not implemented for ollama spawners, return nil
 		return nil
+	case models.EngineMistral:
+		return m.mistralSpawner.Wait(ctx, taskID)
 	default:
 		return m.copilotSpawner.Wait(ctx, taskID)
 	}
@@ -141,6 +151,8 @@ func (m *Manager) IsRunning(taskID string) bool {
 		return m.ollamaClaudeSpawner.IsRunning(taskID)
 	case models.EngineOllamaOpenCode:
 		return m.ollamaOpenCodeSpawner.IsRunning(taskID)
+	case models.EngineMistral:
+		return m.mistralSpawner.IsRunning(taskID)
 	default:
 		return m.copilotSpawner.IsRunning(taskID)
 	}
@@ -151,17 +163,18 @@ func (m *Manager) RunningCount() int {
 	count := m.copilotSpawner.RunningCount() +
 		m.claudeSpawner.RunningCount() +
 		m.geminiSpawner.RunningCount() +
-		m.opencodeSpawner.RunningCount()
-	
+		m.opencodeSpawner.RunningCount() +
+		m.mistralSpawner.RunningCount()
+
 	// Count ollama spawners processes
 	m.ollamaClaudeSpawner.mu.RLock()
 	count += len(m.ollamaClaudeSpawner.processes)
 	m.ollamaClaudeSpawner.mu.RUnlock()
-	
+
 	m.ollamaOpenCodeSpawner.mu.RLock()
 	count += len(m.ollamaOpenCodeSpawner.processes)
 	m.ollamaOpenCodeSpawner.mu.RUnlock()
-	
+
 	return count
 }
 
@@ -171,6 +184,7 @@ func (m *Manager) Shutdown() {
 	m.claudeSpawner.Shutdown()
 	m.geminiSpawner.Shutdown()
 	m.opencodeSpawner.Shutdown()
+	m.mistralSpawner.Shutdown()
 	m.ollamaClaudeSpawner.Cleanup()
 	m.ollamaOpenCodeSpawner.Cleanup()
 }
@@ -203,7 +217,7 @@ func (m *Manager) GetProcess(taskID string) (*Process, bool) {
 func ValidateEngine(engine string) error {
 	e := models.Engine(engine)
 	if e != "" && !models.ValidEngine(e) {
-		return fmt.Errorf("invalid engine: %s (valid: copilot, claude, gemini, opencode, ollama-claude, ollama-opencode)", engine)
+		return fmt.Errorf("invalid engine: %s (valid: copilot, claude, gemini, opencode, ollama-claude, ollama-opencode, mistral)", engine)
 	}
 	return nil
 }

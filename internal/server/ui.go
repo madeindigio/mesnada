@@ -271,6 +271,12 @@ func engineClass(engine models.Engine) string {
 		return "engine-gemini"
 	case models.EngineOpenCode:
 		return "engine-opencode"
+	case models.EngineOllamaClaude:
+		return "engine-ollama-claude"
+	case models.EngineOllamaOpenCode:
+		return "engine-ollama-opencode"
+	case models.EngineMistral:
+		return "engine-mistral"
 	default:
 		return "engine-copilot"
 	}

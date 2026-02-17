@@ -33,11 +33,13 @@ const (
 	EngineOllamaClaude Engine = "ollama-claude"
 	// EngineOllamaOpenCode uses Ollama with OpenCode integration.
 	EngineOllamaOpenCode Engine = "ollama-opencode"
+	// EngineMistral uses Mistral Vibe CLI.
+	EngineMistral Engine = "mistral"
 )
 
 // ValidEngine checks if an engine is valid.
 func ValidEngine(e Engine) bool {
-	return e == EngineCopilot || e == EngineClaude || e == EngineGemini || e == EngineOpenCode || e == EngineOllamaClaude || e == EngineOllamaOpenCode || e == ""
+	return e == EngineCopilot || e == EngineClaude || e == EngineGemini || e == EngineOpenCode || e == EngineOllamaClaude || e == EngineOllamaOpenCode || e == EngineMistral || e == ""
 }
 
 // DefaultEngine returns the default engine.
