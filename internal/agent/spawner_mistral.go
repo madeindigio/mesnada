@@ -3,9 +3,7 @@ package agent
 
 import (
 	"bufio"
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -70,82 +68,12 @@ func NewMistralSpawner(logDir string, onComplete func(task *models.Task)) *Mistr
 // Returns empty string (no error) if neither mcpConfigPath nor model are provided.
 func createVibeTempHome(mcpConfigPath, taskID, baseDir, workDir, model string) (string, error) {
 	tempDir := filepath.Join(baseDir, "vibe-home", taskID)
-	if err := os.MkdirAll(tempDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create temp vibe home: %w", err)
+	content, err := createVibeConfigToml(mcpConfigPath, workDir, model)
+	if err != nil {
+		return "", err
 	}
-
-	var buf bytes.Buffer
-
-	// Set model if specified
-	if model != "" {
-		fmt.Fprintf(&buf, "active_model = %q\n", model)
-	}
-
-	// Disable telemetry and auto-update for non-interactive use
-	buf.WriteString("enable_telemetry = false\n")
-	buf.WriteString("enable_auto_update = false\n")
-
-	// Add MCP server entries if a config is provided
-	if mcpConfigPath != "" {
-		sourcePath := mcpConfigPath
-		if strings.HasPrefix(sourcePath, "@") {
-			sourcePath = sourcePath[1:]
-		}
-
-		absWorkDir := workDir
-		if workDir != "" && !filepath.IsAbs(workDir) {
-			abs, err := filepath.Abs(workDir)
-			if err != nil {
-				return "", fmt.Errorf("failed to resolve workDir: %w", err)
-			}
-			absWorkDir = abs
-		}
-
-		if !filepath.IsAbs(sourcePath) && absWorkDir != "" {
-			sourcePath = filepath.Join(absWorkDir, sourcePath)
-		}
-
-		data, err := os.ReadFile(sourcePath)
-		if err != nil {
-			return "", fmt.Errorf("failed to read MCP config: %w", err)
-		}
-
-		var mesnadaConfig MesnadaMCPConfig
-		if err := json.Unmarshal(data, &mesnadaConfig); err != nil {
-			return "", fmt.Errorf("failed to parse MCP config: %w", err)
-		}
-
-		for name, server := range mesnadaConfig.MCPServers {
-			buf.WriteString("\n[[mcp_servers]]\n")
-			fmt.Fprintf(&buf, "name = %q\n", name)
-
-			switch server.Type {
-			case "http":
-				fmt.Fprintf(&buf, "transport = %q\n", "http")
-				fmt.Fprintf(&buf, "url = %q\n", server.URL)
-			default:
-				// "local" or unset → stdio
-				fmt.Fprintf(&buf, "transport = %q\n", "stdio")
-				fmt.Fprintf(&buf, "command = %q\n", server.Command)
-				if len(server.Args) > 0 {
-					buf.WriteString("args = [")
-					for i, arg := range server.Args {
-						if i > 0 {
-							buf.WriteString(", ")
-						}
-						fmt.Fprintf(&buf, "%q", arg)
-					}
-					buf.WriteString("]\n")
-				}
-				// Resolve cwd relative to workDir and write as env VIBE_HOME cannot set cwd per server,
-				// so skip cwd (vibe uses the global workdir flag instead).
-			}
-		}
-	}
-
-	configPath := filepath.Join(tempDir, "config.toml")
-	if err := os.WriteFile(configPath, buf.Bytes(), 0644); err != nil {
-		return "", fmt.Errorf("failed to write vibe config.toml: %w", err)
+	if err := writeVibeConfig(tempDir, content); err != nil {
+		return "", err
 	}
 
 	// Copy .env (API key) from the real ~/.vibe/ so vibe doesn't start the onboarding wizard.

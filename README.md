@@ -53,6 +53,8 @@ orchestrator:
 
   # (Optional) Additional MCP config that will be passed to all spawned agents.
   # Path to a JSON file containing MCP server configuration.
+  # Mesnada accepts Mesnada/Copilot mcpServers JSON and VS Code .vscode/mcp.json (servers).
+  # For VS Code input, the "inputs" section is ignored and ${input:...} placeholders are not resolved.
   # Mesnada will handle engine-specific format conversion automatically.
   default_mcp_config: ".github/mcp-config.json"
 ```
@@ -174,6 +176,11 @@ Example for Claude Desktop (`~/Library/Application Support/Claude/claude_desktop
   }
 }
 ```
+
+### Antigravity MCP format compatibility
+
+Mesnada accepts Antigravity-style `mcp_config.json` files (same `mcpServers` root), including local stdio fields (`command`, `args`, `env`) and remote HTTP entries using `url` or `serverUrl` (with `serverUrl` preferred when rendering Antigravity output).  
+For project-scoped `--all` generation, use `.gemini/antigravity/mcp_config.json`.
 
 ## Personas
 

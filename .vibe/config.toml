@@ -1,0 +1,13 @@
+enable_telemetry = false
+enable_auto_update = false
+
+[[mcp_servers]]
+name = "local"
+transport = "stdio"
+command = "node"
+args = ["server.js"]
+
+[[mcp_servers]]
+name = "remote"
+transport = "http"
+url = "https://example.com/mcp"

@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "local": {
+      "command": "node",
+      "args": [
+        "server.js"
+      ],
+      "trust": true
+    },
+    "remote": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://example.com/mcp"
+      ],
+      "trust": true
+    }
+  }
+}
