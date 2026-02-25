@@ -441,29 +441,105 @@ func RenderVSCode(cfg CanonicalConfig) VSCodeConfig {
 // workDir is used for formats that resolve relative paths (claude, gemini).
 // For the vibe/mistral format, a string is returned instead of a JSON-serialisable value.
 func RenderByFormat(cfg CanonicalConfig, toFormat, workDir string) (any, error) {
-	switch strings.ToLower(toFormat) {
+	format := strings.ToLower(toFormat)
+	renderCfg := cfg
+	if format != "" && format != FormatMesnada && format != "copilot" {
+		renderCfg = absolutizeRelativeServerPaths(cfg, workDir)
+	}
+
+	switch format {
 	case "", FormatMesnada, "copilot":
 		if cfg.MCPServers == nil {
 			cfg.MCPServers = make(map[string]CanonicalServer)
 		}
 		return cfg, nil
 	case FormatVSCode:
-		return RenderVSCode(cfg), nil
+		return RenderVSCode(renderCfg), nil
 	case FormatClaude:
-		return RenderClaude(cfg, workDir), nil
+		return RenderClaude(renderCfg, workDir), nil
 	case FormatGemini:
-		return RenderGemini(cfg, workDir), nil
+		return RenderGemini(renderCfg, workDir), nil
 	case FormatOpenCode:
-		return RenderOpenCode(cfg), nil
+		return RenderOpenCode(renderCfg), nil
 	case FormatVibe, "mistral":
-		return RenderMistralVibeTOML(cfg, ""), nil
+		return RenderMistralVibeTOML(renderCfg, ""), nil
 	case FormatZed:
-		return RenderZed(cfg), nil
+		return RenderZed(renderCfg), nil
 	case FormatAntigravity:
-		return RenderAntigravity(cfg), nil
+		return RenderAntigravity(renderCfg), nil
 	default:
 		return nil, fmt.Errorf("unsupported MCP output format: %s", toFormat)
 	}
+}
+
+func absolutizeRelativeServerPaths(cfg CanonicalConfig, workDir string) CanonicalConfig {
+	absWorkDir, _ := normalizeWorkDir(workDir)
+	if absWorkDir == "" {
+		return cfg
+	}
+
+	out := CanonicalConfig{MCPServers: make(map[string]CanonicalServer, len(cfg.MCPServers))}
+	for name, server := range cfg.MCPServers {
+		item := server
+		if !isHTTPServer(item) {
+			item.Command = absolutizePathToken(item.Command, absWorkDir)
+			item.Args = absolutizeArgs(item.Args, absWorkDir)
+			item.Cwd = resolveCwd(item.Cwd, absWorkDir)
+		}
+		out.MCPServers[name] = item
+	}
+	return out
+}
+
+func absolutizeArgs(args []string, absWorkDir string) []string {
+	if len(args) == 0 {
+		return args
+	}
+	out := make([]string, len(args))
+	for i, arg := range args {
+		out[i] = absolutizeArgument(arg, absWorkDir)
+	}
+	return out
+}
+
+func absolutizeArgument(arg, absWorkDir string) string {
+	if eq := strings.IndexByte(arg, '='); eq > 0 && strings.HasPrefix(arg, "-") {
+		left := arg[:eq+1]
+		right := arg[eq+1:]
+		return left + absolutizePathToken(right, absWorkDir)
+	}
+	return absolutizePathToken(arg, absWorkDir)
+}
+
+func absolutizePathToken(token, absWorkDir string) string {
+	token = strings.TrimSpace(token)
+	if !isRelativePathToken(token) || absWorkDir == "" {
+		return token
+	}
+	return filepath.Clean(filepath.Join(absWorkDir, token))
+}
+
+func isRelativePathToken(token string) bool {
+	if token == "" {
+		return false
+	}
+	if filepath.IsAbs(token) {
+		return false
+	}
+	if strings.Contains(token, "://") {
+		return false
+	}
+	if strings.HasPrefix(token, "-") {
+		return false
+	}
+	if strings.HasPrefix(token, "~") {
+		return false
+	}
+	if strings.HasPrefix(token, "${") {
+		return false
+	}
+
+	return strings.HasPrefix(token, ".") || strings.Contains(token, "/") || strings.Contains(token, "\\")
 }
 
 // WriteAllFormats writes every supported MCP format into its project-conventional path under projectDir.

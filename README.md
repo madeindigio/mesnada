@@ -389,7 +389,7 @@ cp mesnada ~/bin/mesnada
 
 ### release
 
-Compiles binaries for multiple platforms (Linux x64, Windows x64, macOS aarch64) and generates compressed releases in the `dist` folder.
+Compiles binaries for multiple platforms (Linux x64, Windows x64, macOS aarch64) and generates compressed releases in the `dist` folder, bundling `mesnada` and `mcp-convert` together for each platform.
 
 ```bash
 # Create dist folder
@@ -407,11 +407,13 @@ build_and_zip() {
     
     echo "Building for $os-$arch..."
     GOOS=$os GOARCH=$arch go build -ldflags "-X main.version=$VERSION -X main.commit=$(git rev-parse --short HEAD)" -o dist/mesnada-$suffix$ext ./cmd/mesnada
+    GOOS=$os GOARCH=$arch go build -ldflags "-X main.version=$VERSION -X main.commit=$(git rev-parse --short HEAD)" -o dist/mcp-convert-$suffix$ext ./cmd/mcp-convert
     
-    echo "Zipping mesnada-$suffix$ext..."
+    echo "Zipping mesnada-$suffix$ext and mcp-convert-$suffix$ext..."
     cd dist
-    zip mesnada-$suffix.zip mesnada-$suffix$ext
+    zip mesnada-$suffix.zip mesnada-$suffix$ext mcp-convert-$suffix$ext
     rm mesnada-$suffix$ext
+    rm mcp-convert-$suffix$ext
     cd ..
 }
 

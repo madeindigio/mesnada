@@ -3,3 +3,4 @@ mesnada
 *.log
 dist
 .ai/.mesnada
+mcp-convert

@@ -279,6 +279,71 @@ func TestRenderByFormat_AllFormats(t *testing.T) {
 	}
 }
 
+func TestRenderByFormat_NonCopilotAbsolutizesRelativePaths(t *testing.T) {
+	t.Parallel()
+
+	workDir := "/tmp/workspace"
+	cfg := CanonicalConfig{MCPServers: map[string]CanonicalServer{
+		"local": {
+			Type:    "local",
+			Command: "./bin/mcp-server",
+			Args:    []string{"--config=./configs/mcp.json", "./scripts/server.js", "-y"},
+		},
+	}}
+
+	payload, err := RenderByFormat(cfg, FormatOpenCode, workDir)
+	if err != nil {
+		t.Fatalf("RenderByFormat(opencode): %v", err)
+	}
+
+	out, ok := payload.(OpenCodeConfig)
+	if !ok {
+		t.Fatalf("expected OpenCodeConfig payload, got %T", payload)
+	}
+	cmd := out.MCP["local"].Command
+	if len(cmd) < 3 {
+		t.Fatalf("unexpected command rendering: %#v", cmd)
+	}
+	if cmd[0] != filepath.Join(workDir, "bin", "mcp-server") {
+		t.Fatalf("expected absolute command path, got %q", cmd[0])
+	}
+	if cmd[1] != "--config="+filepath.Join(workDir, "configs", "mcp.json") {
+		t.Fatalf("expected absolute --config path, got %q", cmd[1])
+	}
+	if cmd[2] != filepath.Join(workDir, "scripts", "server.js") {
+		t.Fatalf("expected absolute script path, got %q", cmd[2])
+	}
+}
+
+func TestRenderByFormat_CopilotKeepsRelativePaths(t *testing.T) {
+	t.Parallel()
+
+	cfg := CanonicalConfig{MCPServers: map[string]CanonicalServer{
+		"local": {
+			Type:    "local",
+			Command: "./bin/mcp-server",
+			Args:    []string{"--config=./configs/mcp.json", "./scripts/server.js"},
+		},
+	}}
+
+	payload, err := RenderByFormat(cfg, FormatMesnada, "/tmp/workspace")
+	if err != nil {
+		t.Fatalf("RenderByFormat(mesnada): %v", err)
+	}
+
+	out, ok := payload.(CanonicalConfig)
+	if !ok {
+		t.Fatalf("expected CanonicalConfig payload, got %T", payload)
+	}
+	srv := out.MCPServers["local"]
+	if srv.Command != "./bin/mcp-server" {
+		t.Fatalf("expected relative command preserved, got %q", srv.Command)
+	}
+	if len(srv.Args) != 2 || srv.Args[0] != "--config=./configs/mcp.json" || srv.Args[1] != "./scripts/server.js" {
+		t.Fatalf("expected relative args preserved, got %#v", srv.Args)
+	}
+}
+
 func TestParseCanonicalBytesWithFormat_ZedInput(t *testing.T) {
 	t.Parallel()
 

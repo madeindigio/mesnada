@@ -44,6 +44,11 @@ func main() {
 	}
 
 	inputFile := flag.Arg(0)
+	runRoot, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: get working directory: %v\n", err)
+		os.Exit(1)
+	}
 
 	cfg, err := mcpconv.ParseCanonicalFileWithFormat(inputFile, *from)
 	if err != nil {
@@ -57,7 +62,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
-		written, err := mcpconv.WriteAllFormatsSkippingSource(cfg, projectDir, projectDir, inputFile)
+		written, err := mcpconv.WriteAllFormatsSkippingSource(cfg, projectDir, runRoot, inputFile)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
@@ -68,7 +73,7 @@ func main() {
 		return
 	}
 
-	payload, err := mcpconv.RenderByFormat(cfg, *to, "")
+	payload, err := mcpconv.RenderByFormat(cfg, *to, runRoot)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
