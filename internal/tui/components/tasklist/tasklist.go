@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	tuictx "github.com/sevir/mesnada/internal/tui/context"
 	"github.com/sevir/mesnada/internal/tui/styles"
 	"github.com/sevir/mesnada/pkg/models"
@@ -35,6 +36,7 @@ type Model struct {
 	search         string
 	selected       int
 	offset         int
+	horizontalOff  int
 	runningSpinner string
 }
 
@@ -117,6 +119,23 @@ func (m *Model) SetRunningSpinner(frame string) {
 	m.runningSpinner = strings.TrimSpace(frame)
 }
 
+func (m *Model) ScrollLeft() bool {
+	if m.horizontalOff <= 0 {
+		return false
+	}
+	m.horizontalOff = max(0, m.horizontalOff-8)
+	return true
+}
+
+func (m *Model) ScrollRight(viewportWidth int) bool {
+	maxOffset := m.maxHorizontalOffset(viewportWidth)
+	if maxOffset <= 0 || m.horizontalOff >= maxOffset {
+		return false
+	}
+	m.horizontalOff = min(maxOffset, m.horizontalOff+8)
+	return true
+}
+
 func (m *Model) SelectedTask() *models.Task {
 	if len(m.filtered) == 0 || m.selected < 0 || m.selected >= len(m.filtered) {
 		return nil
@@ -136,10 +155,11 @@ func (m *Model) View(width, height int) string {
 		return ""
 	}
 
-	header := m.renderHeader(width)
+	header := m.renderHeader()
 	if len(m.filtered) == 0 {
 		empty := m.styles.Table.Cell.Render("  No tasks for filter: " + string(m.filter))
-		return lipgloss.NewStyle().Width(width).Height(height).Render(header + "\n" + empty)
+		lines := []string{m.clipHorizontal(header, width), m.clipHorizontal(empty, width)}
+		return lipgloss.NewStyle().Width(width).Height(height).Render(strings.Join(lines, "\n"))
 	}
 
 	visibleRows := height - 2
@@ -148,18 +168,14 @@ func (m *Model) View(width, height int) string {
 	}
 	m.syncOffset(visibleRows)
 
-	idW, engineW, statusW, progressW, tagsW, promptW := calcColumnWidths(width)
+	idW, engineW, statusW, tagsW := calcColumnWidths()
 	var lines []string
 	lines = append(lines, header)
-	lines = append(lines, lipgloss.NewStyle().Foreground(m.styles.Theme.BorderFaint).Render(strings.Repeat("─", max(width-1, 1))))
+	lines = append(lines, lipgloss.NewStyle().Foreground(m.styles.Theme.BorderFaint).Render(strings.Repeat("─", max(width*2, 1))))
 
 	end := min(len(m.filtered), m.offset+visibleRows)
 	for i := m.offset; i < end; i++ {
 		task := m.filtered[i]
-		progress := "-"
-		if task.Progress != nil {
-			progress = fmt.Sprintf("%d%%", task.Progress.Percentage)
-		}
 		tags := "-"
 		if len(task.Tags) > 0 {
 			tags = strings.Join(task.Tags, ",")
@@ -171,19 +187,29 @@ func (m *Model) View(width, height int) string {
 			statusText = m.runningSpinner + " " + statusText
 		}
 		statusRaw := padRight(statusText, statusW)
-		line := fmt.Sprintf("%s %-*s %s %s %-*s %-*s %s",
+		line := fmt.Sprintf("%s %-*s %s %s %-*s",
 			selectionMarker(i == m.selected),
 			idW, truncate(task.ID, idW),
 			m.styles.EngineText(task.Engine, engineRaw),
 			m.styles.StatusText(task.Status, statusRaw),
-			progressW, truncate(progress, progressW),
-			tagsW, truncate(tags, tagsW),
-			truncate(clean(task.Prompt), promptW),
+			tagsW, clean(tags),
 		)
 		if i == m.selected {
 			line = m.styles.Table.SelectedCell.Render(line)
 		}
 		lines = append(lines, line)
+	}
+
+	maxWidth := 0
+	for _, line := range lines {
+		maxWidth = max(maxWidth, ansi.StringWidth(line))
+	}
+	maxOffset := max(0, maxWidth-width)
+	if m.horizontalOff > maxOffset {
+		m.horizontalOff = maxOffset
+	}
+	for i := range lines {
+		lines[i] = m.clipHorizontal(lines[i], width)
 	}
 
 	return lipgloss.NewStyle().Width(width).Height(height).Render(strings.Join(lines, "\n"))
@@ -221,19 +247,17 @@ func (m *Model) applyFilter() {
 	}
 }
 
-func (m *Model) renderHeader(width int) string {
-	idW, engineW, statusW, progressW, tagsW, promptW := calcColumnWidths(width)
+func (m *Model) renderHeader() string {
+	idW, engineW, statusW, tagsW := calcColumnWidths()
 	label := m.styles.Table.FilterActive.Render("filter:" + string(m.filter))
-	line := fmt.Sprintf("  %-*s %-*s %-*s %-*s %-*s %s  %s",
+	line := fmt.Sprintf("  %-*s %-*s %-*s %-*s  %s",
 		idW, "ID",
 		engineW, "ENGINE",
 		statusW, "STATUS",
-		progressW, "PROGRESS",
 		tagsW, "TAGS",
-		padRight("PROMPT", promptW),
 		label,
 	)
-	return m.styles.Table.HeaderRow.Render(truncate(line, width))
+	return m.styles.Table.HeaderRow.Render(line)
 }
 
 func (m *Model) syncOffset(visibleRows int) {
@@ -248,14 +272,46 @@ func (m *Model) syncOffset(visibleRows int) {
 	}
 }
 
-func calcColumnWidths(totalWidth int) (idW, engineW, statusW, progressW, tagsW, promptW int) {
-	idW, engineW, statusW, progressW, tagsW = 14, 12, 10, 8, 14
-	fixed := idW + engineW + statusW + progressW + tagsW + 11
-	promptW = totalWidth - fixed
-	if promptW < 12 {
-		promptW = 12
-	}
+func calcColumnWidths() (idW, engineW, statusW, tagsW int) {
+	idW, engineW, statusW, tagsW = 14, 12, 12, 14
 	return
+}
+
+func (m *Model) maxHorizontalOffset(viewportWidth int) int {
+	if viewportWidth <= 0 {
+		return 0
+	}
+
+	idW, engineW, statusW, tagsW := calcColumnWidths()
+	longest := 0
+	for _, task := range m.filtered {
+		tags := "-"
+		if len(task.Tags) > 0 {
+			tags = strings.Join(task.Tags, ",")
+		}
+		statusText := clean(string(task.Status))
+		line := fmt.Sprintf("%s %-*s %-*s %-*s %-*s",
+			selectionMarker(false),
+			idW, truncate(task.ID, idW),
+			engineW, clean(string(task.Engine)),
+			statusW, statusText,
+			tagsW, clean(tags),
+		)
+		longest = max(longest, ansi.StringWidth(line))
+	}
+
+	header := fmt.Sprintf("  %-*s %-*s %-*s %-*s", idW, "ID", engineW, "ENGINE", statusW, "STATUS", tagsW, "TAGS")
+	longest = max(longest, ansi.StringWidth(header))
+	return max(0, longest-viewportWidth)
+}
+
+func (m *Model) clipHorizontal(line string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	left := max(0, m.horizontalOff)
+	right := left + width
+	return ansi.Cut(line, left, right)
 }
 
 func selectionMarker(selected bool) string {

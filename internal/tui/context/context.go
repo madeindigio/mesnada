@@ -5,7 +5,7 @@ import "github.com/sevir/mesnada/internal/config"
 const (
 	HeaderHeight        = 1
 	FooterHeight        = 1
-	SidebarPercent      = 45
+	SidebarPercent      = 65
 	SidebarDividerWidth = 1
 )
 

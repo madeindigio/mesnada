@@ -284,6 +284,21 @@ func (m *Model) handleSidebarMode(msg tea.KeyMsg) (tea.Cmd, bool) {
 }
 
 func (m *Model) handleGlobalKeys(msg tea.KeyMsg) (tea.Cmd, bool, bool) {
+	if !m.sidebarFocused {
+		switch msg.String() {
+		case "H":
+			if m.taskList.ScrollLeft() {
+				return nil, true, false
+			}
+			return nil, true, false
+		case "L":
+			if m.taskList.ScrollRight(m.currentListWidth()) {
+				return nil, true, false
+			}
+			return nil, true, false
+		}
+	}
+
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		if m.shouldConfirmQuit() {
@@ -396,6 +411,16 @@ func (m *Model) handleGlobalKeys(msg tea.KeyMsg) (tea.Cmd, bool, bool) {
 	}
 
 	return nil, false, false
+}
+
+func (m *Model) currentListWidth() int {
+	if m.ctx == nil {
+		return 0
+	}
+	if m.ctx.SidebarOpen {
+		return m.ctx.MainContentWidth
+	}
+	return m.ctx.ScreenWidth
 }
 
 func runActionCmd(orch *orchestrator.Orchestrator, kind, taskID string) tea.Cmd {
