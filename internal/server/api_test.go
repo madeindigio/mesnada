@@ -233,3 +233,112 @@ func TestAPIPurgeTask_TerminalAndMissingLogIdempotent(t *testing.T) {
 func jsonNumber(n int64) string {
 	return strconv.FormatInt(n, 10)
 }
+
+func TestAPIACPEndpoints(t *testing.T) {
+	srv, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	ctx := httptest.NewRequest("GET", "/", nil).Context()
+
+	// Create a task that simulates an ACP engine
+	// Note: In test environment, ACP is not enabled, so this will fail during spawn
+	// but we can still test the API endpoint behavior
+	task, err := srv.orchestrator.Spawn(ctx, models.SpawnRequest{
+		Prompt:     "test acp task",
+		WorkDir:    "/tmp",
+		Background: true,
+		Engine:     models.EngineACP,
+	})
+	if err != nil {
+		// Expected in test environment without ACP enabled
+		t.Logf("Spawn failed as expected: %v", err)
+		// Create a dummy task for testing validation
+		task = &models.Task{
+			ID:     "test-acp-task",
+			Engine: models.EngineACP,
+		}
+	}
+
+	// Test validation errors (these test the endpoint validation before reaching Manager)
+	t.Run("ValidationErrors", func(t *testing.T) {
+		// Empty message for follow-up
+		body := []byte(`{"message":""}`)
+		req := httptest.NewRequest("POST", "/api/tasks/"+task.ID+"/acp/prompt", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		srv.httpServer.Handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected 400 for empty message, got %d: %s", w.Code, w.Body.String())
+		}
+
+		// Invalid mode
+		body = []byte(`{"mode":"invalid"}`)
+		req = httptest.NewRequest("POST", "/api/tasks/"+task.ID+"/acp/mode", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w = httptest.NewRecorder()
+		srv.httpServer.Handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected 400 for invalid mode, got %d: %s", w.Code, w.Body.String())
+		}
+
+		// Empty mode
+		body = []byte(`{"mode":""}`)
+		req = httptest.NewRequest("POST", "/api/tasks/"+task.ID+"/acp/mode", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w = httptest.NewRecorder()
+		srv.httpServer.Handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected 400 for empty mode, got %d: %s", w.Code, w.Body.String())
+		}
+
+		// Valid mode values should pass validation
+		for _, mode := range []string{"code", "ask", "architect"} {
+			body = []byte(`{"mode":"` + mode + `"}`)
+			req = httptest.NewRequest("POST", "/api/tasks/"+task.ID+"/acp/mode", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			w = httptest.NewRecorder()
+			srv.httpServer.Handler.ServeHTTP(w, req)
+
+			// Will get 500 because ACP is not enabled, but validation passed
+			if w.Code == http.StatusBadRequest {
+				t.Errorf("Mode '%s' should pass validation, got 400: %s", mode, w.Body.String())
+			}
+		}
+	})
+
+	// Test that endpoints exist and respond (they will return 500 in test env without ACP)
+	t.Run("EndpointsExist", func(t *testing.T) {
+		testCases := []struct {
+			name   string
+			method string
+			path   string
+			body   string
+		}{
+			{"Status", "GET", "/api/tasks/" + task.ID + "/acp/status", ""},
+			{"FollowUp", "POST", "/api/tasks/" + task.ID + "/acp/prompt", `{"message":"test"}`},
+			{"SetMode", "POST", "/api/tasks/" + task.ID + "/acp/mode", `{"mode":"ask"}`},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				var req *http.Request
+				if tc.body != "" {
+					req = httptest.NewRequest(tc.method, tc.path, bytes.NewReader([]byte(tc.body)))
+					req.Header.Set("Content-Type", "application/json")
+				} else {
+					req = httptest.NewRequest(tc.method, tc.path, nil)
+				}
+				w := httptest.NewRecorder()
+				srv.httpServer.Handler.ServeHTTP(w, req)
+
+				// Should not be 404 (endpoint exists)
+				if w.Code == http.StatusNotFound {
+					t.Errorf("Endpoint should exist, got 404: %s", w.Body.String())
+				}
+			})
+		}
+	})
+}

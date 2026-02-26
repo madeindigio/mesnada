@@ -171,3 +171,140 @@ func TestSpawnRequest(t *testing.T) {
 		t.Errorf("Expected %d tags, got %d", len(req.Tags), len(decoded.Tags))
 	}
 }
+
+func TestValidEngine(t *testing.T) {
+	validEngines := []Engine{
+		EngineCopilot,
+		EngineClaude,
+		EngineGemini,
+		EngineOpenCode,
+		EngineOllamaClaude,
+		EngineOllamaOpenCode,
+		EngineMistral,
+		EngineACP,
+		EngineACPClaudeCode,
+		EngineACPCodex,
+		EngineACPCustom,
+		"", // empty string is valid (uses default)
+	}
+
+	for _, eng := range validEngines {
+		if !ValidEngine(eng) {
+			t.Errorf("Expected engine %s to be valid", eng)
+		}
+	}
+
+	invalidEngines := []Engine{
+		"invalid",
+		"random",
+		"unknown-engine",
+	}
+
+	for _, eng := range invalidEngines {
+		if ValidEngine(eng) {
+			t.Errorf("Expected engine %s to be invalid", eng)
+		}
+	}
+}
+
+func TestACPEngineTypes(t *testing.T) {
+	// Test that ACP engine types are correctly defined
+	if EngineACP != "acp" {
+		t.Errorf("Expected EngineACP to be 'acp', got %s", EngineACP)
+	}
+	if EngineACPClaudeCode != "acp-claude" {
+		t.Errorf("Expected EngineACPClaudeCode to be 'acp-claude', got %s", EngineACPClaudeCode)
+	}
+	if EngineACPCodex != "acp-codex" {
+		t.Errorf("Expected EngineACPCodex to be 'acp-codex', got %s", EngineACPCodex)
+	}
+	if EngineACPCustom != "acp-custom" {
+		t.Errorf("Expected EngineACPCustom to be 'acp-custom', got %s", EngineACPCustom)
+	}
+}
+
+func TestSpawnRequestWithACPFields(t *testing.T) {
+	req := SpawnRequest{
+		Prompt:     "Implement feature",
+		Engine:     EngineACPClaudeCode,
+		ACPMode:    "code",
+		ACPAgent:   "claude-code",
+		ACPConfigOptions: map[string]interface{}{
+			"auto_approve": true,
+		},
+		ACPMCPServers: []ACPMCPServer{
+			{
+				Name:    "remembrances",
+				Command: "remembrances-mcp",
+				Args:    []string{"--db-path", "/data/db"},
+			},
+		},
+	}
+
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("Failed to marshal: %v", err)
+	}
+
+	var decoded SpawnRequest
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Failed to unmarshal: %v", err)
+	}
+
+	if decoded.Engine != req.Engine {
+		t.Errorf("Expected Engine %s, got %s", req.Engine, decoded.Engine)
+	}
+	if decoded.ACPMode != req.ACPMode {
+		t.Errorf("Expected ACPMode %s, got %s", req.ACPMode, decoded.ACPMode)
+	}
+	if decoded.ACPAgent != req.ACPAgent {
+		t.Errorf("Expected ACPAgent %s, got %s", req.ACPAgent, decoded.ACPAgent)
+	}
+	if len(decoded.ACPMCPServers) != len(req.ACPMCPServers) {
+		t.Errorf("Expected %d MCP servers, got %d", len(req.ACPMCPServers), len(decoded.ACPMCPServers))
+	}
+}
+
+func TestTaskWithACPFields(t *testing.T) {
+	task := &Task{
+		ID:           "test-acp-1",
+		Prompt:       "Test ACP task",
+		Status:       TaskStatusRunning,
+		Engine:       EngineACP,
+		ACPSessionID: "session-123",
+		ACPMode:      "code",
+		ACPStatus: &ACPStatus{
+			SessionID:   "session-123",
+			Mode:        "code",
+			AgentName:   "claude-code",
+			IsConnected: true,
+		},
+		CreatedAt: time.Now(),
+	}
+
+	data, err := json.Marshal(task)
+	if err != nil {
+		t.Fatalf("Failed to marshal task: %v", err)
+	}
+
+	var decoded Task
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Failed to unmarshal task: %v", err)
+	}
+
+	if decoded.ACPSessionID != task.ACPSessionID {
+		t.Errorf("Expected ACPSessionID %s, got %s", task.ACPSessionID, decoded.ACPSessionID)
+	}
+	if decoded.ACPMode != task.ACPMode {
+		t.Errorf("Expected ACPMode %s, got %s", task.ACPMode, decoded.ACPMode)
+	}
+	if decoded.ACPStatus == nil {
+		t.Fatal("Expected ACPStatus to be non-nil")
+	}
+	if decoded.ACPStatus.AgentName != task.ACPStatus.AgentName {
+		t.Errorf("Expected AgentName %s, got %s", task.ACPStatus.AgentName, decoded.ACPStatus.AgentName)
+	}
+	if !decoded.ACPStatus.IsConnected {
+		t.Error("Expected IsConnected to be true")
+	}
+}

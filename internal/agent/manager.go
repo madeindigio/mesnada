@@ -4,8 +4,10 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
+	"github.com/sevir/mesnada/internal/config"
 	"github.com/sevir/mesnada/pkg/models"
 )
 
@@ -18,13 +20,14 @@ type Manager struct {
 	ollamaClaudeSpawner   *OllamaClaudeSpawner
 	ollamaOpenCodeSpawner *OllamaOpenCodeSpawner
 	mistralSpawner        *MistralSpawner
+	acpSpawner            *ACPSpawner
 	taskEngines           map[string]models.Engine // Maps task ID to engine
 	mu                    sync.RWMutex
 }
 
 // NewManager creates a new agent manager.
-func NewManager(logDir string, onComplete func(task *models.Task)) *Manager {
-	return &Manager{
+func NewManager(cfg *config.Config, logDir string, onComplete func(task *models.Task)) *Manager {
+	m := &Manager{
 		copilotSpawner:        NewCopilotSpawner(logDir, onComplete),
 		claudeSpawner:         NewClaudeSpawner(logDir, onComplete),
 		geminiSpawner:         NewGeminiSpawner(logDir, onComplete),
@@ -34,6 +37,13 @@ func NewManager(logDir string, onComplete func(task *models.Task)) *Manager {
 		mistralSpawner:        NewMistralSpawner(logDir, onComplete),
 		taskEngines:           make(map[string]models.Engine),
 	}
+
+	// Initialize ACP spawner if enabled in config
+	if cfg != nil && cfg.ACP.Enabled {
+		m.acpSpawner = NewACPSpawner(&cfg.ACP, logDir, onComplete)
+	}
+
+	return m
 }
 
 // Spawn starts a new agent using the appropriate engine.
@@ -61,9 +71,21 @@ func (m *Manager) Spawn(ctx context.Context, task *models.Task) error {
 		return m.ollamaOpenCodeSpawner.Spawn(ctx, task)
 	case models.EngineMistral:
 		return m.mistralSpawner.Spawn(ctx, task)
+	case models.EngineACP, models.EngineACPClaudeCode, models.EngineACPCodex, models.EngineACPCustom:
+		if m.acpSpawner == nil {
+			return fmt.Errorf("ACP engine requested but ACP is not enabled in configuration")
+		}
+		return m.acpSpawner.Spawn(ctx, task)
 	case models.EngineCopilot:
 		return m.copilotSpawner.Spawn(ctx, task)
 	default:
+		// Check if it's a dynamic ACP engine (prefix "acp-")
+		if strings.HasPrefix(string(engine), "acp-") {
+			if m.acpSpawner == nil {
+				return fmt.Errorf("ACP engine requested (%s) but ACP is not enabled in configuration", engine)
+			}
+			return m.acpSpawner.Spawn(ctx, task)
+		}
 		return m.copilotSpawner.Spawn(ctx, task)
 	}
 }
@@ -85,7 +107,16 @@ func (m *Manager) Cancel(taskID string) error {
 		return m.ollamaOpenCodeSpawner.Cancel(taskID)
 	case models.EngineMistral:
 		return m.mistralSpawner.Cancel(taskID)
+	case models.EngineACP, models.EngineACPClaudeCode, models.EngineACPCodex, models.EngineACPCustom:
+		if m.acpSpawner != nil {
+			return m.acpSpawner.Cancel(taskID)
+		}
+		return fmt.Errorf("ACP spawner not available")
 	default:
+		// Check for dynamic ACP engines
+		if strings.HasPrefix(string(engine), "acp-") && m.acpSpawner != nil {
+			return m.acpSpawner.Cancel(taskID)
+		}
 		return m.copilotSpawner.Cancel(taskID)
 	}
 }
@@ -107,7 +138,16 @@ func (m *Manager) Pause(taskID string) error {
 		return m.ollamaOpenCodeSpawner.Cancel(taskID)
 	case models.EngineMistral:
 		return m.mistralSpawner.Pause(taskID)
+	case models.EngineACP, models.EngineACPClaudeCode, models.EngineACPCodex, models.EngineACPCustom:
+		if m.acpSpawner != nil {
+			return m.acpSpawner.Pause(taskID)
+		}
+		return fmt.Errorf("ACP spawner not available")
 	default:
+		// Check for dynamic ACP engines
+		if strings.HasPrefix(string(engine), "acp-") && m.acpSpawner != nil {
+			return m.acpSpawner.Pause(taskID)
+		}
 		return m.copilotSpawner.Pause(taskID)
 	}
 }
@@ -131,7 +171,16 @@ func (m *Manager) Wait(ctx context.Context, taskID string) error {
 		return nil
 	case models.EngineMistral:
 		return m.mistralSpawner.Wait(ctx, taskID)
+	case models.EngineACP, models.EngineACPClaudeCode, models.EngineACPCodex, models.EngineACPCustom:
+		if m.acpSpawner != nil {
+			return m.acpSpawner.Wait(ctx, taskID)
+		}
+		return fmt.Errorf("ACP spawner not available")
 	default:
+		// Check for dynamic ACP engines
+		if strings.HasPrefix(string(engine), "acp-") && m.acpSpawner != nil {
+			return m.acpSpawner.Wait(ctx, taskID)
+		}
 		return m.copilotSpawner.Wait(ctx, taskID)
 	}
 }
@@ -153,7 +202,16 @@ func (m *Manager) IsRunning(taskID string) bool {
 		return m.ollamaOpenCodeSpawner.IsRunning(taskID)
 	case models.EngineMistral:
 		return m.mistralSpawner.IsRunning(taskID)
+	case models.EngineACP, models.EngineACPClaudeCode, models.EngineACPCodex, models.EngineACPCustom:
+		if m.acpSpawner != nil {
+			return m.acpSpawner.IsRunning(taskID)
+		}
+		return false
 	default:
+		// Check for dynamic ACP engines
+		if strings.HasPrefix(string(engine), "acp-") && m.acpSpawner != nil {
+			return m.acpSpawner.IsRunning(taskID)
+		}
 		return m.copilotSpawner.IsRunning(taskID)
 	}
 }
@@ -175,6 +233,11 @@ func (m *Manager) RunningCount() int {
 	count += len(m.ollamaOpenCodeSpawner.processes)
 	m.ollamaOpenCodeSpawner.mu.RUnlock()
 
+	// Count ACP spawner processes if enabled
+	if m.acpSpawner != nil {
+		count += m.acpSpawner.RunningCount()
+	}
+
 	return count
 }
 
@@ -187,6 +250,11 @@ func (m *Manager) Shutdown() {
 	m.mistralSpawner.Shutdown()
 	m.ollamaClaudeSpawner.Cleanup()
 	m.ollamaOpenCodeSpawner.Cleanup()
+
+	// Shutdown ACP spawner if enabled
+	if m.acpSpawner != nil {
+		m.acpSpawner.Shutdown()
+	}
 }
 
 // getTaskEngine returns the engine used for a task.
@@ -216,8 +284,32 @@ func (m *Manager) GetProcess(taskID string) (*Process, bool) {
 // ValidateEngine checks if an engine string is valid.
 func ValidateEngine(engine string) error {
 	e := models.Engine(engine)
+	// Allow dynamic ACP engines (prefix "acp-")
+	if strings.HasPrefix(engine, "acp-") {
+		return nil
+	}
 	if e != "" && !models.ValidEngine(e) {
-		return fmt.Errorf("invalid engine: %s (valid: copilot, claude, gemini, opencode, ollama-claude, ollama-opencode, mistral)", engine)
+		return fmt.Errorf("invalid engine: %s (valid: copilot, claude, gemini, opencode, ollama-claude, ollama-opencode, mistral, acp, acp-*, acp-claude, acp-codex, acp-custom)", engine)
 	}
 	return nil
+}
+
+// ACPSessionControl sends a control command to an active ACP session.
+// This method is part of Phase 5 API but the actual implementation
+// will be completed in Phase 6 (ACP Client Enhancement).
+func (m *Manager) ACPSessionControl(taskID, action, message, mode string) (interface{}, error) {
+	engine := m.getTaskEngine(taskID)
+
+	// Check if this is an ACP engine
+	if engine != models.EngineACP && engine != models.EngineACPClaudeCode &&
+		engine != models.EngineACPCodex && engine != models.EngineACPCustom &&
+		!strings.HasPrefix(string(engine), "acp-") {
+		return nil, fmt.Errorf("task %s is not using an ACP engine (engine: %s)", taskID, engine)
+	}
+
+	if m.acpSpawner == nil {
+		return nil, fmt.Errorf("ACP spawner not available")
+	}
+
+	return m.acpSpawner.SessionControl(taskID, action, message, mode)
 }

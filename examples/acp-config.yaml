@@ -1,0 +1,162 @@
+# Example ACP Configuration for Mesnada
+#
+# Place this file at ~/.mesnada/config.yaml or use --config flag
+
+# Default model when not specified
+default_model: "claude-sonnet-4.5"
+
+# List of available models
+models:
+  - id: "claude-sonnet-4.5"
+    description: "Balanced performance and speed"
+  - id: "claude-opus-4.5"
+    description: "Highest capability for complex tasks"
+
+# Server configuration
+server:
+  host: "127.0.0.1"
+  port: 8765
+
+# Orchestrator configuration
+orchestrator:
+  store_path: "~/.mesnada/tasks.json"
+  log_dir: "~/.mesnada/logs"
+  max_parallel: 5
+
+# ACP Configuration
+acp:
+  # Default agent to use when engine="acp"
+  default_agent: "claude-code"
+
+  # Auto-approve all permission requests
+  # Set to false for manual approval (production)
+  # Set to true for CI/batch mode (automated)
+  auto_permission: false
+
+  # Agent definitions
+  agents:
+    # Claude Code via ACP
+    claude-code:
+      name: "claude-code"
+      title: "Claude Code (Sonnet 4.5)"
+      command: "claude-code"
+      args: ["--acp", "--model", "claude-sonnet-4.5"]
+      mode: "code"  # code, ask, or architect
+      work_dir: ""  # Empty = use task work_dir
+      env:
+        NO_COLOR: "1"
+        ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+
+      capabilities:
+        terminals: true      # Allow shell commands
+        file_access: true    # Allow file read/write
+        permissions: true    # Enable permission system
+
+      mcp_servers:
+        - name: "filesystem"
+          command: "npx"
+          args: ["-y", "@modelcontextprotocol/server-filesystem"]
+          env: {}
+
+        - name: "github"
+          command: "npx"
+          args: ["-y", "@modelcontextprotocol/server-github"]
+          env:
+            GITHUB_TOKEN: "${GITHUB_TOKEN}"
+
+    # Claude Code Opus variant
+    claude-opus:
+      name: "claude-opus"
+      title: "Claude Code (Opus 4.5)"
+      command: "claude-code"
+      args: ["--acp", "--model", "claude-opus-4.5"]
+      mode: "architect"
+      env:
+        NO_COLOR: "1"
+        ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+
+      capabilities:
+        terminals: true
+        file_access: true
+        permissions: true
+
+      mcp_servers:
+        - name: "filesystem"
+          command: "npx"
+          args: ["-y", "@modelcontextprotocol/server-filesystem"]
+
+    # OpenAI Codex via ACP adapter
+    codex:
+      name: "codex"
+      title: "OpenAI Codex"
+      command: "acp-codex-adapter"
+      args: ["--model", "gpt-5.1-codex"]
+      mode: "code"
+      env:
+        NO_COLOR: "1"
+        OPENAI_API_KEY: "${OPENAI_API_KEY}"
+
+      capabilities:
+        terminals: true
+        file_access: true
+        permissions: true
+
+      mcp_servers:
+        - name: "filesystem"
+          command: "npx"
+          args: ["-y", "@modelcontextprotocol/server-filesystem"]
+
+    # Custom ACP agent (example)
+    custom:
+      name: "custom"
+      title: "Custom ACP Agent"
+      command: "/path/to/custom-acp-agent"
+      args: []
+      mode: "code"
+      env:
+        LOG_LEVEL: "info"
+
+      capabilities:
+        terminals: false      # Custom agent doesn't implement terminals
+        file_access: false    # Custom agent doesn't implement file ops
+        permissions: false
+
+      mcp_servers: []
+
+    # Restricted agent for security-sensitive environments
+    restricted:
+      name: "restricted"
+      title: "Restricted Agent"
+      command: "claude-code"
+      args: ["--acp"]
+      mode: "ask"  # Read-only mode
+      env:
+        NO_COLOR: "1"
+        ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+
+      capabilities:
+        terminals: false      # No shell access
+        file_access: false    # No direct file access
+        permissions: true     # Still ask for permission
+
+      # Can still use MCP tools for controlled file access
+      mcp_servers:
+        - name: "filesystem"
+          command: "npx"
+          args: ["-y", "@modelcontextprotocol/server-filesystem"]
+
+# Engine-specific configurations (for non-ACP engines)
+engines:
+  copilot:
+    default_model: "gpt-5.1-codex"
+    models:
+      - id: "gpt-5.1-codex"
+        description: "Latest Copilot model"
+
+  ollama-claude:
+    default_model: "deepseek-r1:latest"
+    models:
+      - id: "deepseek-r1:latest"
+        description: "DeepSeek-R1 for reasoning"
+      - id: "glm-4.7-tools:latest"
+        description: "GLM-4.7 with tool support"

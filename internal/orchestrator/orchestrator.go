@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/sevir/mesnada/internal/agent"
+	"github.com/sevir/mesnada/internal/config"
 	"github.com/sevir/mesnada/internal/persona"
 	"github.com/sevir/mesnada/internal/store"
 	"github.com/sevir/mesnada/pkg/models"
@@ -40,6 +41,7 @@ type Config struct {
 	DefaultMCPConfig string
 	DefaultEngine    string
 	PersonaPath      string
+	AppConfig        *config.Config // Full app config for passing to managers
 }
 
 // New creates a new Orchestrator.
@@ -79,7 +81,7 @@ func New(cfg Config) (*Orchestrator, error) {
 		cancel:           cancel,
 	}
 
-	o.manager = agent.NewManager(cfg.LogDir, o.onTaskComplete)
+	o.manager = agent.NewManager(cfg.AppConfig, cfg.LogDir, o.onTaskComplete)
 
 	return o, nil
 }
@@ -711,6 +713,12 @@ func (o *Orchestrator) SetProgress(taskID string, percentage int, description st
 	}
 
 	return o.store.Save(task)
+}
+
+// ACPSessionControl sends a control command to an active ACP session.
+// This delegates to the agent manager's ACP session control.
+func (o *Orchestrator) ACPSessionControl(taskID, action, message, mode string) (interface{}, error) {
+	return o.manager.ACPSessionControl(taskID, action, message, mode)
 }
 
 // GetStats returns orchestrator statistics.

@@ -8,8 +8,34 @@
         <div class="panel-meta">
             <div class="kv">
                 <span class="muted">Engine</span>
-                <b><span class="tag {{.EngineClass}}">{{.Engine}}</span></b>
+                <b><span class="tag {{.EngineClass}}">{{.Engine}}{{if .IsACP}}<span class="acp-badge">ACP</span>{{end}}</span></b>
             </div>
+            {{if .IsACP}}
+            {{if ne .ACPMode ""}}
+            <div class="kv">
+                <span class="muted">Mode</span>
+                <b>{{.ACPMode}}</b>
+            </div>
+            {{end}}
+            {{if ne .ACPAgentName ""}}
+            <div class="kv">
+                <span class="muted">Agent</span>
+                <b>{{.ACPAgentName}}</b>
+            </div>
+            {{end}}
+            {{if gt .ACPToolCalls 0}}
+            <div class="kv">
+                <span class="muted">Tool Calls</span>
+                <b>{{.ACPToolCalls}}</b>
+            </div>
+            {{end}}
+            {{if ne .ACPSessionID ""}}
+            <div class="kv">
+                <span class="muted">Session</span>
+                <b title="{{.ACPSessionID}}">{{slice .ACPSessionID 0 8}}...</b>
+            </div>
+            {{end}}
+            {{end}}
             {{if .Model}}
             <div class="kv">
                 <span class="muted">Model</span> <b>{{.Model}}</b>

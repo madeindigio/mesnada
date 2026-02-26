@@ -70,12 +70,22 @@ cp config.example.yaml ~/.mesnada/config.yaml
 
 Mesnada supports multiple AI CLI engines for executing agents:
 
+#### Standard Engines (stdio-based)
 - **copilot** (default): GitHub Copilot CLI
 - **claude**: Anthropic Claude CLI
 - **gemini**: Google Gemini CLI
 - **opencode**: OpenCode.ai CLI
 - **ollama-claude**: Ollama models with Claude interface (`ollama launch claude`)
 - **ollama-opencode**: Ollama models with OpenCode interface (`ollama launch opencode`)
+- **mistral**: Mistral Vibe CLI
+
+#### ACP Engines (Agent Client Protocol)
+- **acp**: Generic ACP agent (uses configured default)
+- **acp-claude**: Claude Code via ACP
+- **acp-codex**: OpenAI Codex via ACP
+- **acp-custom**: Custom ACP-compatible agents
+
+ACP provides advanced features like real-time streaming, permission requests, and native MCP server integration. See [docs/ACP_SUPPORT.md](docs/ACP_SUPPORT.md) for details.
 
 Each engine can have its own set of models and default model. Engine-specific configurations can be defined in the YAML config file:
 
@@ -93,6 +103,36 @@ engines:
 ```
 
 The Ollama engines allow you to run local models using the Ollama platform while benefiting from the Claude or OpenCode interface features.
+
+### ACP Configuration
+
+For ACP agents, add an `acp` section to your config:
+
+```yaml
+acp:
+  default_agent: "claude-code"
+  auto_permission: false
+
+  agents:
+    claude-code:
+      name: "claude-code"
+      title: "Claude Code (ACP)"
+      command: "claude-code"
+      args: ["--acp"]
+      mode: "code"
+
+      capabilities:
+        terminals: true
+        file_access: true
+        permissions: true
+
+      mcp_servers:
+        - name: "filesystem"
+          command: "npx"
+          args: ["-y", "@modelcontextprotocol/server-filesystem"]
+```
+
+See [docs/ACP_SUPPORT.md](docs/ACP_SUPPORT.md) and [docs/ACP_AGENTS.md](docs/ACP_AGENTS.md) for comprehensive guides.
 
 ## Usage
 

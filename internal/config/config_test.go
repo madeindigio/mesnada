@@ -56,3 +56,100 @@ func TestResolvePath_AbsoluteUnchanged(t *testing.T) {
 		t.Fatalf("expected %q, got %q", abs, got)
 	}
 }
+
+func TestValidateACP_ValidConfig(t *testing.T) {
+	cfg := &Config{
+		ACP: ACPConfig{
+			Enabled:      true,
+			DefaultAgent: "claude-code",
+			DefaultMode:  "code",
+			Agents: map[string]ACPAgentConfig{
+				"claude-code": {
+					Name:    "claude-code",
+					Command: "claude-code-acp",
+				},
+			},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected valid config, got error: %v", err)
+	}
+}
+
+func TestValidateACP_InvalidDefaultAgent(t *testing.T) {
+	cfg := &Config{
+		ACP: ACPConfig{
+			Enabled:      true,
+			DefaultAgent: "nonexistent",
+			Agents: map[string]ACPAgentConfig{
+				"claude-code": {
+					Name:    "claude-code",
+					Command: "claude-code-acp",
+				},
+			},
+		},
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for nonexistent default_agent")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected 'not found' error, got: %v", err)
+	}
+}
+
+func TestValidateACP_InvalidMode(t *testing.T) {
+	cfg := &Config{
+		ACP: ACPConfig{
+			Enabled:      true,
+			DefaultAgent: "claude-code",
+			DefaultMode:  "invalid-mode",
+			Agents: map[string]ACPAgentConfig{
+				"claude-code": {
+					Name:    "claude-code",
+					Command: "claude-code-acp",
+				},
+			},
+		},
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for invalid default_mode")
+	}
+	if !strings.Contains(err.Error(), "invalid default_mode") {
+		t.Fatalf("expected 'invalid default_mode' error, got: %v", err)
+	}
+}
+
+func TestValidateACP_MissingCommand(t *testing.T) {
+	cfg := &Config{
+		ACP: ACPConfig{
+			Enabled: true,
+			Agents: map[string]ACPAgentConfig{
+				"agent1": {
+					Name: "agent1",
+					// Command is missing
+				},
+			},
+		},
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for missing command")
+	}
+	if !strings.Contains(err.Error(), "command is required") {
+		t.Fatalf("expected 'command is required' error, got: %v", err)
+	}
+}
+
+func TestValidateACP_DisabledNoValidation(t *testing.T) {
+	cfg := &Config{
+		ACP: ACPConfig{
+			Enabled:      false,
+			DefaultAgent: "nonexistent", // This should not trigger error when disabled
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected no error when ACP is disabled, got: %v", err)
+	}
+}

@@ -1,21 +1,43 @@
 {
   "mcp": {
-    "local": {
+    "hyper-mcp": {
       "type": "local",
       "command": [
-        "node",
-        "server.js"
+        "hyper-mcp",
+        "--config-file",
+        "/home/sevir/.config/hyper-mcp/search.yaml"
       ],
       "enabled": true,
       "timeout": 5000
     },
-    "remote": {
+    "mesnada": {
       "type": "local",
       "command": [
         "npx",
         "-y",
         "mcp-remote",
-        "https://example.com/mcp"
+        "http://127.0.0.1:8766/mcp"
+      ],
+      "enabled": true,
+      "timeout": 5000
+    },
+    "mycommandmcp": {
+      "type": "local",
+      "command": [
+        "mycommandmcp",
+        "--config",
+        "/www/MCP/mesnada/.ai/mycommand-mcp.yaml"
+      ],
+      "enabled": true,
+      "timeout": 5000
+    },
+    "remembrances": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "mcp-remote",
+        "http://127.0.0.1:3530/mcp"
       ],
       "enabled": true,
       "timeout": 5000

@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -23,6 +24,15 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	api.GET("/tasks", s.apiListTasks)
 	api.GET("/tasks/:id/log", s.apiTaskLog)
 	api.DELETE("/tasks/:id/purge", s.apiPurgeTask)
+
+	// ACP session control endpoints
+	api.POST("/tasks/:id/acp/prompt", s.apiACPFollowUp)
+	api.POST("/tasks/:id/acp/mode", s.apiACPSetMode)
+	api.GET("/tasks/:id/acp/status", s.apiACPStatus)
+
+	// ACP permission management endpoints
+	api.GET("/tasks/:id/acp/permissions", s.apiACPListPermissions)
+	api.POST("/tasks/:id/acp/permissions/:req_id", s.apiACPResolvePermission)
 
 	mux.Handle("/api/", r)
 }
@@ -207,4 +217,121 @@ func sanitizeExcerpt(s string) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	s = strings.ReplaceAll(s, "\r", " ")
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// apiACPFollowUp sends a follow-up prompt to an active ACP session.
+func (s *Server) apiACPFollowUp(c *gin.Context) {
+	taskID := c.Param("id")
+
+	var req struct {
+		Message string `json:"message"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	if req.Message == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "message is required"})
+		return
+	}
+
+	result, err := s.orchestrator.ACPSessionControl(taskID, "follow_up", req.Message, "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// apiACPSetMode changes the mode of an active ACP session.
+func (s *Server) apiACPSetMode(c *gin.Context) {
+	taskID := c.Param("id")
+
+	var req struct {
+		Mode string `json:"mode"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	if req.Mode == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "mode is required"})
+		return
+	}
+
+	validModes := map[string]bool{"code": true, "ask": true, "architect": true}
+	if !validModes[req.Mode] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid mode (valid: code, ask, architect)"})
+		return
+	}
+
+	result, err := s.orchestrator.ACPSessionControl(taskID, "set_mode", "", req.Mode)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// apiACPStatus retrieves the status of an active ACP session.
+func (s *Server) apiACPStatus(c *gin.Context) {
+	taskID := c.Param("id")
+
+	result, err := s.orchestrator.ACPSessionControl(taskID, "status", "", "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// apiACPListPermissions lists pending permission requests for a task.
+func (s *Server) apiACPListPermissions(c *gin.Context) {
+	taskID := c.Param("id")
+
+	result, err := s.orchestrator.ACPSessionControl(taskID, "list_permissions", "", "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// apiACPResolvePermission approves or denies a permission request.
+func (s *Server) apiACPResolvePermission(c *gin.Context) {
+	taskID := c.Param("id")
+	reqID := c.Param("req_id")
+
+	var req struct {
+		Action   string `json:"action"`   // "approve" or "deny"
+		OptionID string `json:"option_id,omitempty"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	if req.Action != "approve" && req.Action != "deny" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "action must be 'approve' or 'deny'"})
+		return
+	}
+
+	// Pass the request data as JSON string for the orchestrator to parse
+	data := fmt.Sprintf(`{"request_id":"%s","action":"%s","option_id":"%s"}`, reqID, req.Action, req.OptionID)
+	result, err := s.orchestrator.ACPSessionControl(taskID, "resolve_permission", data, "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
 }

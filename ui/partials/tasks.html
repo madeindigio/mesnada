@@ -11,7 +11,7 @@
     style="cursor: pointer"
 >
     <div class="row">
-        <div class="id">{{.ID}}</div>
+        <div class="id">{{if .IsACP}}<span class="acp-icon" title="ACP Agent">A</span>{{end}}{{.ID}}</div>
         <div class="pct">{{.ProgressText}}</div>
         <div class="when" title="{{.WhenTitle}}">{{.WhenText}}</div>
         <div class="status">
@@ -48,10 +48,12 @@
         </button>
     </div>
 
-    {{if or .Tags .Engine}}
+    {{if or .Tags .Engine .ACPMode}}
     <div class="tags">
-        {{if .Engine}}<span class="tag {{.EngineClass}}">{{.Engine}}</span
-        >{{end}} {{range .Tags}}<span class="tag">{{.}}</span>{{end}}
+        {{if .Engine}}<span class="tag {{.EngineClass}}">{{.Engine}}{{if .IsACP}}<span class="acp-badge">ACP</span>{{end}}</span
+        >{{end}}
+        {{if and .IsACP (ne .ACPMode "")}}<span class="tag">{{.ACPMode}}</span>{{end}}
+        {{range .Tags}}<span class="tag">{{.}}</span>{{end}}
     </div>
     {{end}}
 

@@ -22,6 +22,7 @@ func setupTestServer(t *testing.T) (*Server, func()) {
 		StorePath:   filepath.Join(tmpDir, "tasks.json"),
 		LogDir:      filepath.Join(tmpDir, "logs"),
 		MaxParallel: 2,
+		AppConfig:   nil, // Tests run without full config
 	})
 	if err != nil {
 		os.RemoveAll(tmpDir)

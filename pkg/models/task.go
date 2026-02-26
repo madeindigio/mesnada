@@ -35,11 +35,19 @@ const (
 	EngineOllamaOpenCode Engine = "ollama-opencode"
 	// EngineMistral uses Mistral Vibe CLI.
 	EngineMistral Engine = "mistral"
+	// EngineACP uses ACP (Agent Client Protocol) generic agent.
+	EngineACP Engine = "acp"
+	// EngineACPClaudeCode uses Claude Code via ACP.
+	EngineACPClaudeCode Engine = "acp-claude"
+	// EngineACPCodex uses OpenAI Codex via ACP.
+	EngineACPCodex Engine = "acp-codex"
+	// EngineACPCustom uses a custom ACP agent.
+	EngineACPCustom Engine = "acp-custom"
 )
 
 // ValidEngine checks if an engine is valid.
 func ValidEngine(e Engine) bool {
-	return e == EngineCopilot || e == EngineClaude || e == EngineGemini || e == EngineOpenCode || e == EngineOllamaClaude || e == EngineOllamaOpenCode || e == EngineMistral || e == ""
+	return e == EngineCopilot || e == EngineClaude || e == EngineGemini || e == EngineOpenCode || e == EngineOllamaClaude || e == EngineOllamaOpenCode || e == EngineMistral || e == EngineACP || e == EngineACPClaudeCode || e == EngineACPCodex || e == EngineACPCustom || e == ""
 }
 
 // DefaultEngine returns the default engine.
@@ -52,6 +60,16 @@ type TaskProgress struct {
 	Percentage  int       `json:"percentage"`
 	Description string    `json:"description"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// ACPStatus represents the status of an ACP agent.
+type ACPStatus struct {
+	SessionID    string `json:"session_id,omitempty"`
+	Mode         string `json:"mode,omitempty"`
+	AgentName    string `json:"agent_name,omitempty"`
+	IsConnected  bool   `json:"is_connected"`
+	ToolCalls    int    `json:"tool_calls,omitempty"`
+	LastActivity string `json:"last_activity,omitempty"`
 }
 
 // Task represents a CLI agent task.
@@ -79,6 +97,10 @@ type Task struct {
 	MCPConfig    string        `json:"mcp_config,omitempty"`
 	ExtraArgs    []string      `json:"extra_args,omitempty"`
 	Persona      string        `json:"persona,omitempty"`
+	// ACP-specific fields
+	ACPSessionID string     `json:"acp_session_id,omitempty"`
+	ACPMode      string     `json:"acp_mode,omitempty"`
+	ACPStatus    *ACPStatus `json:"acp_status,omitempty"`
 }
 
 // Duration is a wrapper around time.Duration for JSON marshaling.
@@ -160,6 +182,14 @@ func truncateString(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
+// ACPMCPServer represents an MCP server configuration for ACP.
+type ACPMCPServer struct {
+	Name    string            `json:"name"`
+	Command string            `json:"command"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+}
+
 // SpawnRequest represents a request to spawn a new agent.
 type SpawnRequest struct {
 	Prompt                string   `json:"prompt"`
@@ -177,6 +207,11 @@ type SpawnRequest struct {
 	IncludeDependencyLogs bool     `json:"include_dependency_logs,omitempty"`
 	DependencyLogLines    int      `json:"dependency_log_lines,omitempty"`
 	LogFile               string   `json:"log_file,omitempty"`
+	// ACP-specific fields
+	ACPMode          string                  `json:"acp_mode,omitempty"`
+	ACPAgent         string                  `json:"acp_agent,omitempty"`
+	ACPConfigOptions map[string]interface{}  `json:"acp_config_options,omitempty"`
+	ACPMCPServers    []ACPMCPServer          `json:"acp_mcp_servers,omitempty"`
 }
 
 // WaitRequest represents a request to wait for task completion.

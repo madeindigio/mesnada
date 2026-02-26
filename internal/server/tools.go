@@ -31,6 +31,7 @@ func (s *Server) registerTools() {
 	s.tools["get_stats"] = s.toolGetStats
 	s.tools["get_task_output"] = s.toolGetTaskOutput
 	s.tools["set_progress"] = s.toolSetProgress
+	s.tools["acp_session_control"] = s.toolACPSessionControl
 }
 
 // detectEngineForModel detects the appropriate engine for a given model
@@ -77,27 +78,31 @@ func (s *Server) getToolDefinitions() []Tool {
 
 	// Build dynamic model description
 	modelDesc := "AI model to use. Available models depend on the selected engine. "
-	if s.config.Engines != nil && len(s.config.Engines) > 0 {
-		modelDesc += "Models by engine: "
-		for engineName := range s.config.Engines {
-			modelDesc += fmt.Sprintf("%s: %v; ", engineName, s.config.GetModelIDsForEngine(engineName))
+	if s.config != nil {
+		if s.config.Engines != nil && len(s.config.Engines) > 0 {
+			modelDesc += "Models by engine: "
+			for engineName := range s.config.Engines {
+				modelDesc += fmt.Sprintf("%s: %v; ", engineName, s.config.GetModelIDsForEngine(engineName))
+			}
+		} else if len(s.config.Models) > 0 {
+			modelDesc += fmt.Sprintf("Available: %v", s.config.GetModelIDsForEngine(""))
 		}
-	} else if len(s.config.Models) > 0 {
-		modelDesc += fmt.Sprintf("Available: %v", s.config.GetModelIDsForEngine(""))
 	}
 
 	// Get all model IDs for enum (for backward compatibility with clients that expect it)
 	allModels := make(map[string]bool)
-	if s.config.Engines != nil {
-		for engineName := range s.config.Engines {
-			for _, modelID := range s.config.GetModelIDsForEngine(engineName) {
-				allModels[modelID] = true
+	if s.config != nil {
+		if s.config.Engines != nil {
+			for engineName := range s.config.Engines {
+				for _, modelID := range s.config.GetModelIDsForEngine(engineName) {
+					allModels[modelID] = true
+				}
 			}
 		}
-	}
-	// Add global models
-	for _, modelID := range s.config.GetModelIDsForEngine("") {
-		allModels[modelID] = true
+		// Add global models
+		for _, modelID := range s.config.GetModelIDsForEngine("") {
+			allModels[modelID] = true
+		}
 	}
 	modelEnum := make([]string, 0, len(allModels))
 	for modelID := range allModels {
@@ -160,6 +165,38 @@ func (s *Server) getToolDefinitions() []Tool {
 					"persona": map[string]interface{}{
 						"type":        "string",
 						"description": personaDesc,
+					},
+					// ACP-specific parameters
+					"acp_mode": map[string]interface{}{
+						"type":        "string",
+						"description": "ACP session mode: 'code' (default), 'ask' (read-only), 'architect' (plan only). Only used with ACP engines.",
+						"enum":        []string{"code", "ask", "architect"},
+					},
+					"acp_agent": map[string]interface{}{
+						"type":        "string",
+						"description": "Name of the ACP agent to use (from config). Only used with 'acp' engine.",
+					},
+					"acp_config_options": map[string]interface{}{
+						"type":        "object",
+						"description": "ACP config options to set on the session",
+						"properties": map[string]interface{}{
+							"thinking_enabled":      map[string]interface{}{"type": "boolean"},
+							"max_tokens":            map[string]interface{}{"type": "integer"},
+							"custom_instructions":   map[string]interface{}{"type": "string"},
+						},
+					},
+					"acp_mcp_servers": map[string]interface{}{
+						"type":        "array",
+						"description": "Additional MCP servers to attach to the ACP session",
+						"items": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"name":    map[string]interface{}{"type": "string"},
+								"command": map[string]interface{}{"type": "string"},
+								"args":    map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}},
+								"env":     map[string]interface{}{"type": "object"},
+							},
+						},
 					},
 				},
 				"required": []string{"prompt"},
@@ -380,22 +417,55 @@ func (s *Server) getToolDefinitions() []Tool {
 				"required": []string{"task_id", "percentage"},
 			},
 		},
+		{
+			Name:        "acp_session_control",
+			Description: "Control an active ACP session. Send follow-up prompts, change mode, or get session status.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Task ID with active ACP session",
+					},
+					"action": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"follow_up", "set_mode", "cancel", "status"},
+						"description": "Action to perform",
+					},
+					"message": map[string]interface{}{
+						"type":        "string",
+						"description": "Follow-up message (for 'follow_up' action)",
+					},
+					"mode": map[string]interface{}{
+						"type":        "string",
+						"description": "New mode (for 'set_mode' action)",
+						"enum":        []string{"code", "ask", "architect"},
+					},
+				},
+				"required": []string{"task_id", "action"},
+			},
+		},
 	}
 }
 
 func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req struct {
-		Prompt       string   `json:"prompt"`
-		WorkDir      string   `json:"work_dir"`
-		Engine       string   `json:"engine"`
-		Model        string   `json:"model"`
-		Background   *bool    `json:"background"`
-		Timeout      string   `json:"timeout"`
-		Dependencies []string `json:"dependencies"`
-		Tags         []string `json:"tags"`
-		MCPConfig    string   `json:"mcp_config"`
-		ExtraArgs    []string `json:"extra_args"`
-		Persona      string   `json:"persona"`
+		Prompt           string                   `json:"prompt"`
+		WorkDir          string                   `json:"work_dir"`
+		Engine           string                   `json:"engine"`
+		Model            string                   `json:"model"`
+		Background       *bool                    `json:"background"`
+		Timeout          string                   `json:"timeout"`
+		Dependencies     []string                 `json:"dependencies"`
+		Tags             []string                 `json:"tags"`
+		MCPConfig        string                   `json:"mcp_config"`
+		ExtraArgs        []string                 `json:"extra_args"`
+		Persona          string                   `json:"persona"`
+		// ACP-specific parameters
+		ACPMode          string                   `json:"acp_mode"`
+		ACPAgent         string                   `json:"acp_agent"`
+		ACPConfigOptions map[string]interface{}   `json:"acp_config_options"`
+		ACPMCPServers    []models.ACPMCPServer    `json:"acp_mcp_servers"`
 	}
 
 	if err := json.Unmarshal(params, &req); err != nil {
@@ -430,17 +500,22 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 	}
 
 	task, err := s.orchestrator.Spawn(ctx, models.SpawnRequest{
-		Prompt:       req.Prompt,
-		WorkDir:      req.WorkDir,
-		Engine:       engine,
-		Model:        req.Model,
-		Background:   background,
-		Timeout:      req.Timeout,
-		Dependencies: req.Dependencies,
-		Tags:         req.Tags,
-		MCPConfig:    req.MCPConfig,
-		ExtraArgs:    req.ExtraArgs,
-		Persona:      req.Persona,
+		Prompt:           req.Prompt,
+		WorkDir:          req.WorkDir,
+		Engine:           engine,
+		Model:            req.Model,
+		Background:       background,
+		Timeout:          req.Timeout,
+		Dependencies:     req.Dependencies,
+		Tags:             req.Tags,
+		MCPConfig:        req.MCPConfig,
+		ExtraArgs:        req.ExtraArgs,
+		Persona:          req.Persona,
+		// ACP-specific fields
+		ACPMode:          req.ACPMode,
+		ACPAgent:         req.ACPAgent,
+		ACPConfigOptions: req.ACPConfigOptions,
+		ACPMCPServers:    req.ACPMCPServers,
 	})
 
 	if err != nil {
@@ -808,4 +883,54 @@ func (s *Server) toolSetProgress(ctx context.Context, params json.RawMessage) (i
 		"description": req.Description,
 		"updated":     true,
 	}, nil
+}
+
+func (s *Server) toolACPSessionControl(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req struct {
+		TaskID  string `json:"task_id"`
+		Action  string `json:"action"`
+		Message string `json:"message"`
+		Mode    string `json:"mode"`
+	}
+
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w", err)
+	}
+
+	if req.TaskID == "" {
+		return nil, fmt.Errorf("task_id is required")
+	}
+
+	if req.Action == "" {
+		return nil, fmt.Errorf("action is required")
+	}
+
+	// Validate action
+	validActions := map[string]bool{
+		"follow_up": true,
+		"set_mode":  true,
+		"cancel":    true,
+		"status":    true,
+	}
+	if !validActions[req.Action] {
+		return nil, fmt.Errorf("invalid action: %s (valid: follow_up, set_mode, cancel, status)", req.Action)
+	}
+
+	// Validate mode if set_mode action
+	if req.Action == "set_mode" {
+		if req.Mode == "" {
+			return nil, fmt.Errorf("mode parameter required for set_mode action")
+		}
+		validModes := map[string]bool{"code": true, "ask": true, "architect": true}
+		if !validModes[req.Mode] {
+			return nil, fmt.Errorf("invalid mode: %s (valid: code, ask, architect)", req.Mode)
+		}
+	}
+
+	// Validate message if follow_up action
+	if req.Action == "follow_up" && req.Message == "" {
+		return nil, fmt.Errorf("message parameter required for follow_up action")
+	}
+
+	return s.orchestrator.ACPSessionControl(req.TaskID, req.Action, req.Message, req.Mode)
 }

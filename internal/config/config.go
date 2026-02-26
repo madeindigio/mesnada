@@ -32,6 +32,7 @@ type Config struct {
 	DefaultModel string                  `json:"default_model" yaml:"default_model"`
 	Models       []ModelConfig           `json:"models" yaml:"models"`
 	Engines      map[string]EngineConfig `json:"engines,omitempty" yaml:"engines,omitempty"`
+	ACP          ACPConfig               `json:"acp,omitempty" yaml:"acp,omitempty"`
 	Server       ServerConfig            `json:"server" yaml:"server"`
 	Orchestrator OrchestratorConfig      `json:"orchestrator" yaml:"orchestrator"`
 }
@@ -50,6 +51,41 @@ type OrchestratorConfig struct {
 	DefaultMCPConfig string `json:"default_mcp_config" yaml:"default_mcp_config"`
 	DefaultEngine    string `json:"default_engine" yaml:"default_engine"`
 	PersonaPath      string `json:"persona_path,omitempty" yaml:"persona_path,omitempty"`
+}
+
+// ACPCapabilities defines what an ACP agent can do.
+type ACPCapabilities struct {
+	Terminals   bool `json:"terminals" yaml:"terminals"`
+	FileAccess  bool `json:"file_access" yaml:"file_access"`
+	Permissions bool `json:"permissions" yaml:"permissions"`
+}
+
+// MCPServerRef references an MCP server for ACP agents.
+type MCPServerRef struct {
+	Name    string            `json:"name" yaml:"name"`
+	Command string            `json:"command" yaml:"command"`
+	Args    []string          `json:"args,omitempty" yaml:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
+}
+
+// ACPAgentConfig configuration for a specific ACP agent.
+type ACPAgentConfig struct {
+	Name         string            `json:"name" yaml:"name"`
+	Title        string            `json:"title" yaml:"title"`
+	Command      string            `json:"command" yaml:"command"`
+	Args         []string          `json:"args,omitempty" yaml:"args,omitempty"`
+	Env          map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
+	MCPServers   []MCPServerRef    `json:"mcp_servers,omitempty" yaml:"mcp_servers,omitempty"`
+	Capabilities ACPCapabilities   `json:"capabilities" yaml:"capabilities"`
+}
+
+// ACPConfig global ACP configuration.
+type ACPConfig struct {
+	Enabled        bool                      `json:"enabled" yaml:"enabled"`
+	DefaultAgent   string                    `json:"default_agent,omitempty" yaml:"default_agent,omitempty"`
+	DefaultMode    string                    `json:"default_mode,omitempty" yaml:"default_mode,omitempty"`
+	Agents         map[string]ACPAgentConfig `json:"agents,omitempty" yaml:"agents,omitempty"`
+	AutoPermission bool                      `json:"auto_permission" yaml:"auto_permission"`
 }
 
 // DefaultConfig returns the default configuration.
@@ -318,4 +354,48 @@ func expandMCPConfig(value string) string {
 		return "@" + expandHome(value[1:])
 	}
 	return expandHome(value)
+}
+
+// Validate validates the configuration and returns any errors.
+func (c *Config) Validate() error {
+	// Validate ACP configuration if enabled
+	if c.ACP.Enabled {
+		if err := c.validateACP(); err != nil {
+			return fmt.Errorf("ACP configuration error: %w", err)
+		}
+	}
+	return nil
+}
+
+// validateACP validates the ACP configuration.
+func (c *Config) validateACP() error {
+	// Check if default_agent exists in agents map
+	if c.ACP.DefaultAgent != "" {
+		if c.ACP.Agents == nil || len(c.ACP.Agents) == 0 {
+			return fmt.Errorf("default_agent '%s' specified but no agents defined", c.ACP.DefaultAgent)
+		}
+		if _, exists := c.ACP.Agents[c.ACP.DefaultAgent]; !exists {
+			return fmt.Errorf("default_agent '%s' not found in agents list", c.ACP.DefaultAgent)
+		}
+	}
+
+	// Validate default_mode if specified
+	if c.ACP.DefaultMode != "" {
+		validModes := map[string]bool{"code": true, "ask": true, "architect": true}
+		if !validModes[c.ACP.DefaultMode] {
+			return fmt.Errorf("invalid default_mode '%s', must be one of: code, ask, architect", c.ACP.DefaultMode)
+		}
+	}
+
+	// Validate each agent configuration
+	for name, agent := range c.ACP.Agents {
+		if agent.Name == "" {
+			return fmt.Errorf("agent '%s': name is required", name)
+		}
+		if agent.Command == "" {
+			return fmt.Errorf("agent '%s': command is required", name)
+		}
+	}
+
+	return nil
 }

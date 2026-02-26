@@ -1,15 +1,28 @@
 {
   "mcpServers": {
-    "local": {
+    "hyper-mcp": {
       "type": "local",
-      "command": "node",
+      "command": "hyper-mcp",
       "args": [
-        "server.js"
+        "--config-file",
+        "/home/sevir/.config/hyper-mcp/search.yaml"
       ]
     },
-    "remote": {
+    "mesnada": {
       "type": "http",
-      "url": "https://example.com/mcp"
+      "url": "http://127.0.0.1:8766/mcp"
+    },
+    "mycommandmcp": {
+      "type": "local",
+      "command": "mycommandmcp",
+      "args": [
+        "--config",
+        "./.ai/mycommand-mcp.yaml"
+      ]
+    },
+    "remembrances": {
+      "type": "http",
+      "url": "http://127.0.0.1:3530/mcp"
     }
   }
 }

@@ -2,12 +2,23 @@ enable_telemetry = false
 enable_auto_update = false
 
 [[mcp_servers]]
-name = "local"
+name = "mycommandmcp"
 transport = "stdio"
-command = "node"
-args = ["server.js"]
+command = "mycommandmcp"
+args = ["--config", "/www/MCP/mesnada/.ai/mycommand-mcp.yaml"]
 
 [[mcp_servers]]
-name = "remote"
+name = "remembrances"
 transport = "http"
-url = "https://example.com/mcp"
+url = "http://127.0.0.1:3530/mcp"
+
+[[mcp_servers]]
+name = "hyper-mcp"
+transport = "stdio"
+command = "hyper-mcp"
+args = ["--config-file", "/home/sevir/.config/hyper-mcp/search.yaml"]
+
+[[mcp_servers]]
+name = "mesnada"
+transport = "http"
+url = "http://127.0.0.1:8766/mcp"

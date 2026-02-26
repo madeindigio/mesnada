@@ -175,3 +175,52 @@ orchestrator:
   # When spawning agents, you can specify a persona to prepend its instructions to the prompt.
   # Example: ~/.mesnada/personas
   # persona_path: "~/.mesnada/personas"
+
+# Agent Client Protocol (ACP) configuration
+# ACP enables communication with agents using the standardized Agent Client Protocol
+acp:
+  enabled: false  # Set to true to enable ACP agent support
+  default_agent: "claude-code"  # Default ACP agent to use
+  default_mode: "code"  # Default mode: "code", "ask", or "architect"
+  auto_permission: false  # Auto-approve permission requests (use with caution)
+
+  # ACP agent configurations
+  agents:
+    claude-code:
+      name: "claude-code"
+      title: "Claude Code (ACP)"
+      command: "claude-code-acp"
+      args: []
+      env:
+        ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+      capabilities:
+        terminals: true
+        file_access: true
+        permissions: true
+      mcp_servers:
+        - name: "remembrances"
+          command: "remembrances-mcp"
+          args: ["--db-path", "/data/remembrances.db"]
+
+    codex:
+      name: "codex"
+      title: "OpenAI Codex (ACP)"
+      command: "codex"
+      args: ["--acp"]
+      env:
+        OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      capabilities:
+        terminals: false
+        file_access: true
+        permissions: false
+
+    custom-agent:
+      name: "custom"
+      title: "Custom ACP Agent"
+      command: "/usr/local/bin/my-acp-agent"
+      args: ["--verbose"]
+      env: {}
+      capabilities:
+        terminals: true
+        file_access: true
+        permissions: true

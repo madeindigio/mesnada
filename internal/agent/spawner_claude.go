@@ -180,8 +180,8 @@ func (s *ClaudeSpawner) buildArgs(task *models.Task, mcpConfigPath string) []str
 	// Add extra args if needed (but most should be env vars now)
 	args = append(args, task.ExtraArgs...)
 
-	// Add ttermin prompt as the final argument
-	args = append(args, promptWithTaskID)
+	// Pass prompt via -p flag (positional args are interpreted as file paths by Claude CLI)
+	args = append(args, "-p", promptWithTaskID)
 
 	// Store the modified prompt
 	task.Prompt = promptWithTaskID

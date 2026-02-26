@@ -7,23 +7,28 @@
         "/home/sevir/.config/hyper-mcp/search.yaml"
       ]
     },
+    "mesnada": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "http://127.0.0.1:8766/mcp"
+      ]
+    },
     "mycommandmcp": {
       "command": "mycommandmcp",
       "args": [
         "--config",
-        "./.ai/mycommand-mcp.yaml"
+        "/www/MCP/mesnada/.ai/mycommand-mcp.yaml"
       ]
     },
     "remembrances": {
-      "command": "remembrances-mcp-beta",
+      "command": "npx",
       "args": [
-        "--config",
-        "./.ai/remembrances.config.yaml"
+        "-y",
+        "mcp-remote",
+        "http://127.0.0.1:3530/mcp"
       ]
-    },
-    "mesnada": {
-      "type": "http",
-      "url": "http://127.0.0.1:8766/mcp"
     }
   }
 }

@@ -79,6 +79,11 @@ func (s *Server) newGinEngine() *gin.Engine {
 		api.POST("/tasks/:id/retry", s.handleAPITaskRetry)
 		api.DELETE("/tasks/:id", s.handleAPITaskDelete)
 		api.DELETE("/tasks/:id/purge", s.handleAPITaskPurge)
+
+		// ACP session control endpoints
+		api.POST("/tasks/:id/acp/prompt", s.handleAPIACPFollowUp)
+		api.POST("/tasks/:id/acp/mode", s.handleAPIACPSetMode)
+		api.GET("/tasks/:id/acp/status", s.handleAPIACPStatus)
 	}
 
 	return r
@@ -319,6 +324,76 @@ func promptExcerpt(s string, max int) string {
 		return s
 	}
 	return s[:max-3] + "..."
+}
+
+func (s *Server) handleAPIACPFollowUp(c *gin.Context) {
+	taskID := c.Param("id")
+
+	var req struct {
+		Message string `json:"message"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	if req.Message == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "message is required"})
+		return
+	}
+
+	result, err := s.orchestrator.ACPSessionControl(taskID, "follow_up", req.Message, "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+func (s *Server) handleAPIACPSetMode(c *gin.Context) {
+	taskID := c.Param("id")
+
+	var req struct {
+		Mode string `json:"mode"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	if req.Mode == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "mode is required"})
+		return
+	}
+
+	validModes := map[string]bool{"code": true, "ask": true, "architect": true}
+	if !validModes[req.Mode] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid mode (valid: code, ask, architect)"})
+		return
+	}
+
+	result, err := s.orchestrator.ACPSessionControl(taskID, "set_mode", "", req.Mode)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+func (s *Server) handleAPIACPStatus(c *gin.Context) {
+	taskID := c.Param("id")
+
+	result, err := s.orchestrator.ACPSessionControl(taskID, "status", "", "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
 }
 
 func readLogChunk(path string, offset, max int64) ([]byte, int64, bool, error) {

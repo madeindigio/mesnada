@@ -26,6 +26,8 @@ type uiTaskRow struct {
 	EngineClass   string
 	Model         string
 	PromptExcerpt string
+	IsACP         bool
+	ACPMode       string
 }
 
 type uiTasksVM struct {
@@ -45,6 +47,11 @@ type uiPanelVM struct {
 	DurationText  string
 	TagsText      string
 	Prompt        string
+	IsACP         bool
+	ACPMode       string
+	ACPAgentName  string
+	ACPToolCalls  int
+	ACPSessionID  string
 }
 
 type uiLogVM struct {
@@ -90,6 +97,12 @@ func (s *Server) handleUITasks(w http.ResponseWriter, r *http.Request) {
 			engine = string(models.DefaultEngine())
 		}
 
+		isACP := isACPEngine(t.Engine)
+		acpMode := ""
+		if isACP && t.ACPMode != "" {
+			acpMode = t.ACPMode
+		}
+
 		vm.Tasks = append(vm.Tasks, uiTaskRow{
 			ID:            t.ID,
 			Status:        t.Status,
@@ -102,6 +115,8 @@ func (s *Server) handleUITasks(w http.ResponseWriter, r *http.Request) {
 			EngineClass:   engineClass(t.Engine),
 			Model:         t.Model,
 			PromptExcerpt: truncate(stripTaskIDPrefix(t.Prompt), 100),
+			IsACP:         isACP,
+			ACPMode:       acpMode,
 		})
 	}
 
@@ -167,6 +182,20 @@ func (s *Server) handleUIPanel(w http.ResponseWriter, r *http.Request) {
 		engine = string(models.DefaultEngine())
 	}
 
+	isACP := isACPEngine(task.Engine)
+	acpMode := ""
+	acpAgentName := ""
+	acpToolCalls := 0
+	acpSessionID := ""
+	if isACP {
+		acpMode = task.ACPMode
+		acpSessionID = task.ACPSessionID
+		if task.ACPStatus != nil {
+			acpAgentName = task.ACPStatus.AgentName
+			acpToolCalls = task.ACPStatus.ToolCalls
+		}
+	}
+
 	vm := uiPanelVM{
 		Task:          task,
 		Engine:        engine,
@@ -180,6 +209,11 @@ func (s *Server) handleUIPanel(w http.ResponseWriter, r *http.Request) {
 		DurationText:  durationText,
 		TagsText:      tagsText,
 		Prompt:        stripTaskIDPrefix(task.Prompt),
+		IsACP:         isACP,
+		ACPMode:       acpMode,
+		ACPAgentName:  acpAgentName,
+		ACPToolCalls:  acpToolCalls,
+		ACPSessionID:  acpSessionID,
 	}
 
 	tpl, err := s.getUITemplates()
@@ -277,8 +311,19 @@ func engineClass(engine models.Engine) string {
 		return "engine-ollama-opencode"
 	case models.EngineMistral:
 		return "engine-mistral"
+	case models.EngineACP, models.EngineACPClaudeCode, models.EngineACPCodex, models.EngineACPCustom:
+		return "engine-acp"
 	default:
 		return "engine-copilot"
+	}
+}
+
+func isACPEngine(engine models.Engine) bool {
+	switch engine {
+	case models.EngineACP, models.EngineACPClaudeCode, models.EngineACPCodex, models.EngineACPCustom:
+		return true
+	default:
+		return false
 	}
 }
 

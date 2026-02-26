@@ -34,6 +34,7 @@ func main() {
 		initConfig  = flag.Bool("init", false, "Initialize config file and exit")
 		initPath    = flag.String("init-path", "", "Path where to create the config file (used with -init)")
 		useStdio    = flag.Bool("stdio", false, "Use stdio transport instead of HTTP")
+		enableACP   = flag.Bool("enable-acp", false, "Enable ACP agent support (overrides config)")
 	)
 	flag.Parse()
 
@@ -79,6 +80,14 @@ func main() {
 	if *maxParallel != 0 {
 		cfg.Orchestrator.MaxParallel = *maxParallel
 	}
+	if *enableACP {
+		cfg.ACP.Enabled = true
+	}
+
+	// Validate configuration
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("Configuration validation error: %v", err)
+	}
 
 	// Create orchestrator
 	orch, err := orchestrator.New(orchestrator.Config{
@@ -88,6 +97,7 @@ func main() {
 		DefaultMCPConfig: cfg.Orchestrator.DefaultMCPConfig,
 		DefaultEngine:    cfg.Orchestrator.DefaultEngine,
 		PersonaPath:      cfg.Orchestrator.PersonaPath,
+		AppConfig:        cfg,
 	})
 	if err != nil {
 		log.Fatalf("Failed to create orchestrator: %v", err)
