@@ -11,9 +11,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mattn/go-isatty"
 	"github.com/sevir/mesnada/internal/config"
 	"github.com/sevir/mesnada/internal/orchestrator"
 	"github.com/sevir/mesnada/internal/server"
+	"github.com/sevir/mesnada/internal/tui"
 )
 
 var (
@@ -35,6 +37,8 @@ func main() {
 		initPath    = flag.String("init-path", "", "Path where to create the config file (used with -init)")
 		useStdio    = flag.Bool("stdio", false, "Use stdio transport instead of HTTP")
 		enableACP   = flag.Bool("enable-acp", false, "Enable ACP agent support (overrides config)")
+		noTUI       = flag.Bool("no-tui", false, "Disable TUI dashboard (use legacy log output)")
+		noWebUI     = flag.Bool("no-webui", false, "Disable Web UI and HTTP endpoints")
 	)
 	flag.Parse()
 
@@ -103,15 +107,30 @@ func main() {
 		log.Fatalf("Failed to create orchestrator: %v", err)
 	}
 
-	// Create server
-	srv := server.New(server.Config{
-		Addr:         cfg.Address(),
-		Orchestrator: orch,
-		Version:      version,
-		Commit:       commit,
-		UseStdio:     *useStdio,
-		AppConfig:    cfg,
+	useTUI, startWebUI := decideInterfaceMode(interfaceModeOptions{
+		UseStdio:           *useStdio,
+		NoTUI:              *noTUI,
+		NoWebUI:            *noWebUI,
+		TUIEnabled:         cfg.TUI.Enabled,
+		WebUIEnabled:       cfg.TUI.WebUI,
+		AutoDetectTerminal: cfg.TUI.AutoDetectTerminal,
+		IsTerminal:         isTerminalSession(),
 	})
+	if !*useStdio && !useTUI && !startWebUI {
+		log.Fatal("No interface enabled. Use default settings, remove --no-webui, or run with --stdio.")
+	}
+
+	var srv *server.Server
+	if *useStdio || startWebUI {
+		srv = server.New(server.Config{
+			Addr:         cfg.Address(),
+			Orchestrator: orch,
+			Version:      version,
+			Commit:       commit,
+			UseStdio:     *useStdio,
+			AppConfig:    cfg,
+		})
+	}
 
 	// Handle shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -128,8 +147,10 @@ func main() {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer shutdownCancel()
 
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			log.Printf("Server shutdown error: %v", err)
+		if srv != nil {
+			if err := srv.Shutdown(shutdownCtx); err != nil {
+				log.Printf("Server shutdown error: %v", err)
+			}
 		}
 
 		if err := orch.Shutdown(); err != nil {
@@ -137,24 +158,95 @@ func main() {
 		}
 	}()
 
-	// Print startup info
+	// Print startup info (only in non-TUI mode, stdio logs are always shown)
 	if *useStdio {
 		log.Printf("mesnada %s starting in stdio mode", version)
-	} else {
+	} else if !useTUI {
 		log.Printf("mesnada %s starting", version)
-		log.Printf("UI endpoint:  http://%s/ui", cfg.Address())
-		log.Printf("MCP endpoint: http://%s/mcp", cfg.Address())
-		log.Printf("SSE endpoint: http://%s/mcp/sse", cfg.Address())
-		log.Printf("Health check: http://%s/health", cfg.Address())
-	}
-
-	// Start server
-	if err := srv.Start(); err != nil {
-		select {
-		case <-ctx.Done():
-			// Expected shutdown
-		default:
-			log.Fatalf("Server error: %v", err)
+		if startWebUI {
+			log.Printf("UI endpoint:  http://%s/ui", cfg.Address())
+			log.Printf("MCP endpoint: http://%s/mcp", cfg.Address())
+			log.Printf("SSE endpoint: http://%s/mcp/sse", cfg.Address())
+			log.Printf("Health check: http://%s/health", cfg.Address())
+		} else {
+			log.Printf("HTTP disabled (--no-webui or tui.webui=false): running TUI-only mode")
 		}
 	}
+
+	if useTUI {
+		if srv != nil {
+			// TUI mode: run HTTP server in a background goroutine, then launch TUI.
+			serverErr := make(chan error, 1)
+			go func() {
+				if err := srv.Start(); err != nil {
+					select {
+					case <-ctx.Done():
+						// Expected shutdown — ignore.
+					default:
+						serverErr <- err
+					}
+				}
+			}()
+
+			// Small delay to let the server bind before TUI starts.
+			time.Sleep(50 * time.Millisecond)
+
+			// Check for immediate server startup failure.
+			select {
+			case err := <-serverErr:
+				log.Fatalf("Server error: %v", err)
+			default:
+			}
+		}
+
+		if err := tui.Run(orch, cfg); err != nil {
+			log.Fatalf("TUI error: %v", err)
+		}
+	} else {
+		// Legacy mode: blocking server start (original behaviour).
+		if srv == nil {
+			log.Fatal("Legacy mode requires HTTP transport; remove --no-webui or use TUI/default mode")
+		}
+		if err := srv.Start(); err != nil {
+			select {
+			case <-ctx.Done():
+				// Expected shutdown
+			default:
+				log.Fatalf("Server error: %v", err)
+			}
+		}
+	}
+}
+
+type interfaceModeOptions struct {
+	UseStdio           bool
+	NoTUI              bool
+	NoWebUI            bool
+	TUIEnabled         bool
+	WebUIEnabled       bool
+	AutoDetectTerminal bool
+	IsTerminal         bool
+}
+
+func decideInterfaceMode(opts interfaceModeOptions) (useTUI bool, startWebUI bool) {
+	if opts.UseStdio {
+		return false, false
+	}
+
+	useTUI = opts.TUIEnabled && !opts.NoTUI
+	if opts.AutoDetectTerminal && !opts.IsTerminal {
+		useTUI = false
+	}
+
+	startWebUI = opts.WebUIEnabled && !opts.NoWebUI
+	return useTUI, startWebUI
+}
+
+func isTerminalSession() bool {
+	return isatty.IsTerminal(os.Stdin.Fd()) ||
+		isatty.IsTerminal(os.Stdout.Fd()) ||
+		isatty.IsTerminal(os.Stderr.Fd()) ||
+		isatty.IsCygwinTerminal(os.Stdin.Fd()) ||
+		isatty.IsCygwinTerminal(os.Stdout.Fd()) ||
+		isatty.IsCygwinTerminal(os.Stderr.Fd())
 }

@@ -33,8 +33,17 @@ type Config struct {
 	Models       []ModelConfig           `json:"models" yaml:"models"`
 	Engines      map[string]EngineConfig `json:"engines,omitempty" yaml:"engines,omitempty"`
 	ACP          ACPConfig               `json:"acp,omitempty" yaml:"acp,omitempty"`
+	TUI          TUIConfig               `json:"tui,omitempty" yaml:"tui,omitempty"`
 	Server       ServerConfig            `json:"server" yaml:"server"`
 	Orchestrator OrchestratorConfig      `json:"orchestrator" yaml:"orchestrator"`
+}
+
+// TUIConfig holds TUI/WebUI integration settings.
+type TUIConfig struct {
+	Enabled                     bool `json:"enabled" yaml:"enabled"`
+	WebUI                       bool `json:"webui" yaml:"webui"`
+	AutoDetectTerminal          bool `json:"auto_detect_terminal" yaml:"auto_detect_terminal"`
+	ConfirmQuitWithRunningTasks bool `json:"confirm_quit_with_running_tasks" yaml:"confirm_quit_with_running_tasks"`
 }
 
 // ServerConfig holds HTTP server configuration.
@@ -112,6 +121,12 @@ func DefaultConfig() *Config {
 		Server: ServerConfig{
 			Host: "127.0.0.1",
 			Port: 8765,
+		},
+		TUI: TUIConfig{
+			Enabled:                     true,
+			WebUI:                       true,
+			AutoDetectTerminal:          true,
+			ConfirmQuitWithRunningTasks: true,
 		},
 		Orchestrator: OrchestratorConfig{
 			StorePath:   filepath.Join(mesnadaDir, "tasks.json"),

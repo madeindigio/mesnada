@@ -145,6 +145,13 @@ server:
   host: "127.0.0.1"
   port: 8765
 
+# TUI/WebUI integration configuration
+tui:
+  enabled: true
+  webui: true
+  auto_detect_terminal: true
+  confirm_quit_with_running_tasks: true
+
 # Orchestrator configuration
 orchestrator:
   store_path: "~/.mesnada/tasks.json"

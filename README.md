@@ -45,6 +45,13 @@ server:
   host: "127.0.0.1"
   port: 8765
 
+# TUI/WebUI integration
+tui:
+  enabled: true
+  webui: true
+  auto_detect_terminal: true
+  confirm_quit_with_running_tasks: true
+
 # Orchestrator configuration
 orchestrator:
   store_path: "~/.mesnada/tasks.json"
@@ -162,6 +169,8 @@ See [docs/ACP_SUPPORT.md](docs/ACP_SUPPORT.md) and [docs/ACP_AGENTS.md](docs/ACP
 --log-dir      Directory for agent logs
 --max-parallel Maximum parallel agents
 --stdio        Use stdio transport instead of HTTP
+--no-tui       Disable TUI dashboard (legacy server mode)
+--no-webui     Disable Web UI and HTTP endpoints
 --version      Show version
 --init         Initialize default configuration
 ```
