@@ -5,7 +5,7 @@ import (
 	"github.com/sevir/mesnada/internal/tui/styles"
 )
 
-const defaultHints = "↑/k ↓/j h/l g/G nav  a/r/c/F filters  f cycle  / search  ctrl+r refresh  P/R/X/T/D actions  tab sidebar  ? help  q quit"
+const defaultHints = "↑/k ↓/j h/l g/G nav  a/r/c/F filters  f cycle  / search  ctrl+r refresh  P/R/X/T/D actions  tab sidebar  ctrl+l logs  ? help  q quit"
 
 type Model struct {
 	ctx    *tuictx.Context

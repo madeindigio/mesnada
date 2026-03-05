@@ -15,8 +15,10 @@ import (
 	"github.com/sevir/mesnada/internal/tui/components"
 	"github.com/sevir/mesnada/internal/tui/components/footer"
 	"github.com/sevir/mesnada/internal/tui/components/header"
+	"github.com/sevir/mesnada/internal/tui/components/logpanel"
 	"github.com/sevir/mesnada/internal/tui/components/sidebar"
 	"github.com/sevir/mesnada/internal/tui/components/tasklist"
+	"github.com/sevir/mesnada/internal/tui/logcapture"
 	tuictx "github.com/sevir/mesnada/internal/tui/context"
 	"github.com/sevir/mesnada/internal/tui/styles"
 	"github.com/sevir/mesnada/internal/tui/theme"
@@ -42,6 +44,8 @@ type Model struct {
 	footer         *footer.Model
 	sidebar        *sidebar.Model
 	taskList       *tasklist.Model
+	logPanel       *logpanel.Model
+	logBuf         *logcapture.Buffer
 	contextAware   []components.ContextAware
 	ready          bool
 	err            error
@@ -55,7 +59,8 @@ type pendingAction struct {
 }
 
 // NewModel creates a new root TUI Model.
-func NewModel(orch *orchestrator.Orchestrator, cfg *config.Config) Model {
+// logBuf may be nil if log capture is not desired.
+func NewModel(orch *orchestrator.Orchestrator, cfg *config.Config, logBuf *logcapture.Buffer) Model {
 	uiTheme := theme.Default()
 	uiStyles := styles.InitStyles(uiTheme)
 
@@ -68,6 +73,7 @@ func NewModel(orch *orchestrator.Orchestrator, cfg *config.Config) Model {
 	footerComponent := footer.New(ctx, &uiStyles)
 	sidebarComponent := sidebar.New(ctx, &uiStyles)
 	taskListComponent := tasklist.New(ctx, &uiStyles)
+	logPanelComponent := logpanel.New(ctx, &uiStyles, logBuf)
 
 	return Model{
 		ctx:      ctx,
@@ -78,6 +84,8 @@ func NewModel(orch *orchestrator.Orchestrator, cfg *config.Config) Model {
 		footer:   footerComponent,
 		sidebar:  sidebarComponent,
 		taskList: taskListComponent,
+		logPanel: logPanelComponent,
+		logBuf:   logBuf,
 		theme:    uiTheme,
 		styles:   uiStyles,
 		contextAware: []components.ContextAware{
@@ -85,6 +93,7 @@ func NewModel(orch *orchestrator.Orchestrator, cfg *config.Config) Model {
 			footerComponent,
 			sidebarComponent,
 			taskListComponent,
+			logPanelComponent,
 		},
 	}
 }
@@ -319,6 +328,10 @@ func (m *Model) handleGlobalKeys(msg tea.KeyMsg) (tea.Cmd, bool, bool) {
 			m.sidebarFocused = false
 		}
 		return nil, true, false
+	case key.Matches(msg, m.keys.ToggleLogPanel):
+		m.ctx.ToggleLogPanel()
+		m.propagateContext()
+		return nil, true, false
 	case key.Matches(msg, m.keys.Left):
 		m.sidebarFocused = false
 		return nil, true, false
@@ -479,6 +492,11 @@ func (m Model) View() string {
 		content = m.renderHelpOverlay()
 	}
 	foot := m.footer.View(m.renderStatusError())
+
+	if m.ctx.LogPanelOpen {
+		logView := m.logPanel.View()
+		return lipgloss.JoinVertical(lipgloss.Left, head, content, logView, foot)
+	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, head, content, foot)
 }

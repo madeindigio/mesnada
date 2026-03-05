@@ -26,6 +26,7 @@ type KeyMap struct {
 	Cancel         key.Binding
 	Retry          key.Binding
 	Purge          key.Binding
+	ToggleLogPanel key.Binding
 	ConfirmYes     key.Binding
 	ConfirmNo      key.Binding
 }
@@ -40,7 +41,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Left, k.Right, k.Top, k.Bottom},
 		{k.FilterStatus, k.FilterAll, k.FilterRunning, k.FilterComplete, k.FilterFailed},
-		{k.Search, k.ToggleSidebar, k.Refresh, k.Help, k.Quit},
+		{k.Search, k.ToggleSidebar, k.ToggleLogPanel, k.Refresh, k.Help, k.Quit},
 		{k.Pause, k.Resume, k.Cancel, k.Retry, k.Purge},
 		{k.ConfirmYes, k.ConfirmNo},
 	}
@@ -70,6 +71,7 @@ func DefaultKeyMap() *KeyMap {
 		Cancel:         key.NewBinding(key.WithKeys("X"), key.WithHelp("X", "cancel")),
 		Retry:          key.NewBinding(key.WithKeys("T"), key.WithHelp("T", "retry")),
 		Purge:          key.NewBinding(key.WithKeys("D"), key.WithHelp("D", "purge")),
+		ToggleLogPanel: key.NewBinding(key.WithKeys("ctrl+l"), key.WithHelp("ctrl+l", "logs")),
 		ConfirmYes:     key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "confirm")),
 		ConfirmNo:      key.NewBinding(key.WithKeys("n", "esc"), key.WithHelp("n/esc", "dismiss")),
 	}

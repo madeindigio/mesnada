@@ -7,6 +7,8 @@ const (
 	FooterHeight        = 1
 	SidebarPercent      = 65
 	SidebarDividerWidth = 1
+	LogPanelPercent     = 30 // percentage of screen height when open
+	LogPanelBorderH     = 1  // top border/title line
 )
 
 // Context holds shared state propagated to all TUI components.
@@ -17,6 +19,8 @@ type Context struct {
 	MainContentHeight int
 	SidebarOpen       bool
 	SidebarWidth      int
+	LogPanelOpen      bool
+	LogPanelHeight    int
 	Config            *config.Config
 	Error             error
 	SelectedTaskID    string
@@ -45,8 +49,23 @@ func (c *Context) ToggleSidebar() {
 	c.SetSidebarOpen(!c.SidebarOpen)
 }
 
+func (c *Context) ToggleLogPanel() {
+	c.LogPanelOpen = !c.LogPanelOpen
+	c.RecalcDimensions()
+}
+
 func (c *Context) RecalcDimensions() {
-	c.MainContentHeight = c.ScreenHeight - HeaderHeight - FooterHeight
+	available := c.ScreenHeight - HeaderHeight - FooterHeight
+	if c.LogPanelOpen {
+		c.LogPanelHeight = c.ScreenHeight * LogPanelPercent / 100
+		if c.LogPanelHeight < 3 {
+			c.LogPanelHeight = 3
+		}
+		available -= c.LogPanelHeight + LogPanelBorderH
+	} else {
+		c.LogPanelHeight = 0
+	}
+	c.MainContentHeight = available
 	if c.MainContentHeight < 0 {
 		c.MainContentHeight = 0
 	}

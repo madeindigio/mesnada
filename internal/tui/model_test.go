@@ -126,7 +126,7 @@ func TestQuitWithoutRunningTasksExitsImmediately(t *testing.T) {
 }
 
 func testModelWithTasks() Model {
-	m := NewModel(nil, config.DefaultConfig())
+	m := NewModel(nil, config.DefaultConfig(), nil)
 	mAny, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = mAny.(Model)
 	mAny, _ = m.Update(TaskListUpdatedMsg{Tasks: []*models.Task{
@@ -176,7 +176,7 @@ func sendKeyWithQuit(m Model, msg tea.KeyMsg) (Model, bool) {
 }
 
 func testModelNoRunningTasks() Model {
-	m := NewModel(nil, config.DefaultConfig())
+	m := NewModel(nil, config.DefaultConfig(), nil)
 	mAny, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = mAny.(Model)
 	mAny, _ = m.Update(TaskListUpdatedMsg{Tasks: []*models.Task{
