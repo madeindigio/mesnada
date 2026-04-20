@@ -7,9 +7,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/sevir/mesnada/internal/orchestrator"
+	"github.com/sevir/mesnada/pkg/models"
 )
 
 func setupTestServer(t *testing.T) (*Server, func()) {
@@ -373,5 +376,67 @@ func TestSpawnAgentTool(t *testing.T) {
 	text := textContent["text"].(string)
 	if text == "" {
 		t.Error("Expected text content")
+	}
+}
+
+func TestSpawnAgentToolRespawnCompletedTaskRejected(t *testing.T) {
+	srv, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	completed := &models.Task{
+		ID:        "task-completed",
+		Prompt:    "done",
+		WorkDir:   "/tmp",
+		Status:    models.TaskStatusCompleted,
+		CreatedAt: time.Now(),
+	}
+	if err := srv.orchestrator.SpawnTestSeed(completed); err != nil {
+		t.Fatalf("Failed to seed completed task: %v", err)
+	}
+
+	reqBody := JSONRPCRequest{
+		JSONRPC: "2.0",
+		ID:      1,
+		Method:  "tools/call",
+		Params:  json.RawMessage(`{"name": "spawn_agent", "arguments": {"existing_task_id": "task-completed", "background": true}}`),
+	}
+
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest("POST", "/mcp", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	srv.httpServer.Handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	var response JSONRPCResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+	if response.Error != nil {
+		if response.Error.Message == "" {
+			t.Fatal("Expected non-empty error message")
+		}
+		return
+	}
+
+	result, ok := response.Result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected map result, got %T", response.Result)
+	}
+	content, ok := result["content"].([]interface{})
+	if !ok || len(content) == 0 {
+		t.Fatal("Expected tool error content in response")
+	}
+	entry, ok := content[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected content entry map, got %T", content[0])
+	}
+	text, _ := entry["text"].(string)
+	if text == "" || !strings.Contains(text, "cannot be updated") {
+		t.Fatalf("Expected completed-task message, got %q", text)
 	}
 }

@@ -207,6 +207,7 @@ type SpawnRequest struct {
 	IncludeDependencyLogs bool     `json:"include_dependency_logs,omitempty"`
 	DependencyLogLines    int      `json:"dependency_log_lines,omitempty"`
 	LogFile               string   `json:"log_file,omitempty"`
+	ExistingTaskID        string   `json:"existing_task_id,omitempty"`
 	// ACP-specific fields
 	ACPMode          string                  `json:"acp_mode,omitempty"`
 	ACPAgent         string                  `json:"acp_agent,omitempty"`

@@ -186,6 +186,91 @@ func TestOrchestratorCancel(t *testing.T) {
 	}
 }
 
+func TestOrchestratorRespawnFailedTaskUpdatesDependents(t *testing.T) {
+	orch, cleanup := setupTestOrchestrator(t)
+	defer cleanup()
+
+	failed := &models.Task{
+		ID:        "task-failed",
+		Prompt:    "original prompt",
+		WorkDir:   "/tmp",
+		Status:    models.TaskStatusFailed,
+		Engine:    models.EngineCopilot,
+		Model:     "old-model",
+		Tags:      []string{"failed"},
+		CreatedAt: time.Now(),
+	}
+	if err := orch.store.Save(failed); err != nil {
+		t.Fatalf("Failed to save failed task: %v", err)
+	}
+
+	child := &models.Task{
+		ID:           "task-child",
+		Prompt:       "child prompt",
+		WorkDir:      "/tmp",
+		Status:       models.TaskStatusPending,
+		Dependencies: []string{failed.ID},
+		CreatedAt:    time.Now(),
+	}
+	if err := orch.store.Save(child); err != nil {
+		t.Fatalf("Failed to save child task: %v", err)
+	}
+
+	respawned, err := orch.Spawn(context.Background(), models.SpawnRequest{
+		ExistingTaskID: failed.ID,
+		Engine:         models.EngineGemini,
+		Model:          "new-model",
+		Background:     true,
+	})
+	if err != nil {
+		t.Fatalf("Failed to respawn task: %v", err)
+	}
+	if respawned.ID == failed.ID {
+		t.Fatal("Expected respawned task to have a new ID")
+	}
+	if respawned.Engine != models.EngineGemini {
+		t.Fatalf("Expected engine %s, got %s", models.EngineGemini, respawned.Engine)
+	}
+	if respawned.Model != "new-model" {
+		t.Fatalf("Expected model new-model, got %s", respawned.Model)
+	}
+
+	updatedChild, err := orch.GetTask(child.ID)
+	if err != nil {
+		t.Fatalf("Failed to get child task: %v", err)
+	}
+	if len(updatedChild.Dependencies) != 1 || updatedChild.Dependencies[0] != respawned.ID {
+		t.Fatalf("Expected child dependency to be updated to %s, got %v", respawned.ID, updatedChild.Dependencies)
+	}
+}
+
+func TestOrchestratorRespawnCompletedTaskRejected(t *testing.T) {
+	orch, cleanup := setupTestOrchestrator(t)
+	defer cleanup()
+
+	completed := &models.Task{
+		ID:        "task-completed",
+		Prompt:    "done",
+		WorkDir:   "/tmp",
+		Status:    models.TaskStatusCompleted,
+		CreatedAt: time.Now(),
+	}
+	if err := orch.store.Save(completed); err != nil {
+		t.Fatalf("Failed to save completed task: %v", err)
+	}
+
+	_, err := orch.Spawn(context.Background(), models.SpawnRequest{
+		ExistingTaskID: completed.ID,
+		Background:     true,
+	})
+	if err == nil {
+		t.Fatal("Expected error respawning completed task")
+	}
+	if !strings.Contains(err.Error(), "cannot be updated") {
+		t.Fatalf("Expected completed-task error, got %v", err)
+	}
+}
+
 func TestOrchestratorStats(t *testing.T) {
 	orch, cleanup := setupTestOrchestrator(t)
 	defer cleanup()

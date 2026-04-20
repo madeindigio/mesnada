@@ -130,6 +130,46 @@ func (o *Orchestrator) processDependentTasks(completed *models.Task) {
 	}
 }
 
+func cloneStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make([]string, len(values))
+	copy(cloned, values)
+	return cloned
+}
+
+func (o *Orchestrator) replaceTaskDependency(oldTaskID, newTaskID string) error {
+	if oldTaskID == "" || newTaskID == "" || oldTaskID == newTaskID {
+		return nil
+	}
+
+	tasks, err := o.store.List(store.ListFilter{})
+	if err != nil {
+		return err
+	}
+
+	for _, task := range tasks {
+		updated := false
+		deps := cloneStringSlice(task.Dependencies)
+		for i, depID := range deps {
+			if depID == oldTaskID {
+				deps[i] = newTaskID
+				updated = true
+			}
+		}
+		if !updated {
+			continue
+		}
+		task.Dependencies = deps
+		if err := o.store.Save(task); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (o *Orchestrator) canStart(task *models.Task) bool {
 	if len(task.Dependencies) == 0 {
 		return true
@@ -205,6 +245,10 @@ func (o *Orchestrator) getDependencyLogs(dependencies []string, numLines int) (s
 
 // Spawn creates and optionally starts a new agent task.
 func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*models.Task, error) {
+	if req.ExistingTaskID != "" {
+		return o.respawnTask(ctx, req)
+	}
+
 	// Validate work directory
 	workDir := req.WorkDir
 	if workDir == "" {
@@ -303,6 +347,73 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 		} else {
 			o.startTask(task)
 		}
+	}
+
+	return task, nil
+}
+
+func (o *Orchestrator) respawnTask(ctx context.Context, req models.SpawnRequest) (*models.Task, error) {
+	prev, err := o.store.Get(req.ExistingTaskID)
+	if err != nil {
+		return nil, err
+	}
+
+	if prev.Status == models.TaskStatusCompleted {
+		return nil, fmt.Errorf("task %s is completed and cannot be updated", prev.ID)
+	}
+	if prev.Status != models.TaskStatusFailed && prev.Status != models.TaskStatusPaused {
+		return nil, fmt.Errorf("task %s cannot be respawned from status %s", prev.ID, prev.Status)
+	}
+
+	spawnReq := req
+	spawnReq.ExistingTaskID = ""
+	if strings.TrimSpace(spawnReq.Prompt) == "" {
+		spawnReq.Prompt = prev.Prompt
+	}
+	if strings.TrimSpace(spawnReq.WorkDir) == "" {
+		spawnReq.WorkDir = prev.WorkDir
+	}
+	if spawnReq.Engine == "" {
+		spawnReq.Engine = prev.Engine
+	}
+	if spawnReq.Model == "" {
+		spawnReq.Model = prev.Model
+	}
+	if len(spawnReq.Dependencies) == 0 {
+		spawnReq.Dependencies = cloneStringSlice(prev.Dependencies)
+	}
+	if len(spawnReq.Tags) == 0 {
+		spawnReq.Tags = cloneStringSlice(prev.Tags)
+	}
+	if spawnReq.Priority == 0 {
+		spawnReq.Priority = prev.Priority
+	}
+	if spawnReq.Timeout == "" && prev.Timeout > 0 {
+		spawnReq.Timeout = time.Duration(prev.Timeout).String()
+	}
+	if spawnReq.MCPConfig == "" {
+		spawnReq.MCPConfig = prev.MCPConfig
+	}
+	if len(spawnReq.ExtraArgs) == 0 {
+		spawnReq.ExtraArgs = cloneStringSlice(prev.ExtraArgs)
+	}
+	if spawnReq.Persona == "" {
+		spawnReq.Persona = prev.Persona
+	}
+	if spawnReq.LogFile == "" {
+		spawnReq.LogFile = prev.LogFile
+	}
+	if spawnReq.ACPMode == "" {
+		spawnReq.ACPMode = prev.ACPMode
+	}
+
+	task, err := o.Spawn(ctx, spawnReq)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := o.replaceTaskDependency(prev.ID, task.ID); err != nil {
+		return nil, err
 	}
 
 	return task, nil
@@ -784,6 +895,10 @@ func (o *Orchestrator) Shutdown() error {
 	o.cancel()
 	o.manager.Shutdown()
 	return o.store.Close()
+}
+
+func (o *Orchestrator) SpawnTestSeed(task *models.Task) error {
+	return o.store.Save(task)
 }
 
 func generateID() string {

@@ -422,6 +422,7 @@ Compiles the mesnada binary.
 # Get version from last git tag
 VERSION=$(git describe --tags --abbrev=0)
 go build -ldflags "-X main.version=$VERSION -X main.commit=$(git rev-parse --short HEAD)" -o mesnada ./cmd/mesnada
+rm *.log
 ```
 
 ### build-and-copy

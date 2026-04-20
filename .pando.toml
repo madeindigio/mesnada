@@ -1,0 +1,216 @@
+WorkingDir = ''
+Debug = false
+LogFile = ''
+DebugLSP = false
+ContextPaths = []
+AutoCompact = true
+
+[Data]
+Directory = './.pando/data'
+
+[MCPServers]
+
+[Providers]
+[Providers.anthropic]
+APIKey = ''
+BaseURL = ''
+Disabled = false
+UseOAuth = true
+
+[LSP]
+[LSP.gopls]
+Disabled = false
+Command = 'gopls'
+Args = []
+Languages = []
+
+[Agents]
+[Agents.coder]
+Model = 'copilot.gpt-5.3-codex'
+AutoCompact = true
+AutoCompactThreshold = 0.9
+
+[Agents.summarizer]
+Model = 'copilot.gpt-4o'
+ReasoningEffort = ''
+ThinkingMode = 'disabled'
+AutoCompact = false
+AutoCompactThreshold = 0.0
+
+[Agents.task]
+Model = 'copilot.gpt-4.1'
+ReasoningEffort = ''
+ThinkingMode = 'disabled'
+AutoCompact = false
+AutoCompactThreshold = 0.0
+
+[Agents.title]
+Model = 'gemini.gemini-2.5-flash'
+MaxTokens = 8192
+ReasoningEffort = ''
+ThinkingMode = ''
+AutoCompact = false
+AutoCompactThreshold = 0.0
+
+[Skills]
+Enabled = true
+Paths = ['./agents/skills']
+
+[SkillsCatalog]
+Enabled = true
+BaseURL = ''
+AutoUpdate = false
+DefaultScope = ''
+
+[TUI]
+Theme = ''
+
+[Permissions]
+AutoApproveTools = true
+
+[Mesnada]
+Enabled = true
+
+[Mesnada.Server]
+Host = '127.0.0.1'
+Port = 9767
+
+[Mesnada.Orchestrator]
+StorePath = ''
+LogDir = ''
+MaxParallel = 5
+DefaultEngine = 'copilot'
+DefaultModel = 'gpt-5.4'
+DefaultMCPConfig = ''
+PersonaPath = ''
+
+[Mesnada.ACP]
+Enabled = true
+DefaultAgent = 'copilot'
+AutoPermission = true
+
+[Mesnada.ACP.Server]
+Enabled = false
+Transports = ['http']
+Host = '0.0.0.0'
+Port = 8766
+MaxSessions = 100
+SessionTimeout = '30m'
+RequireAuth = false
+
+[Mesnada.TUI]
+Enabled = true
+WebUI = false
+
+[Shell]
+Path = ''
+Args = []
+
+[Bash]
+BannedCommands = []
+AllowedCommands = []
+
+[Remembrances]
+Enabled = true
+KBPath = ''
+KBWatch = false
+KBAutoImport = false
+AutoIndexSessions = false
+DocumentEmbeddingProvider = 'ollama'
+DocumentEmbeddingModel = 'nomic-embed-text'
+DocumentEmbeddingBaseURL = ''
+DocumentEmbeddingAPIKey = ''
+CodeEmbeddingProvider = 'ollama'
+CodeEmbeddingModel = 'hf.co/limcheekin/CodeRankEmbed-GGUF:Q4_K_M'
+CodeEmbeddingBaseURL = ''
+CodeEmbeddingAPIKey = ''
+UseSameModel = false
+ChunkSize = 800
+ChunkOverlap = 100
+IndexWorkers = 4
+ContextEnrichmentEnabled = false
+ContextEnrichmentKBResults = 0
+ContextEnrichmentCodeResults = 0
+ContextEnrichmentCodeProject = ''
+
+[Server]
+Enabled = true
+Host = 'localhost'
+Port = 9999
+RequireAuth = false
+
+[Lua]
+Enabled = false
+ScriptPath = ''
+Timeout = ''
+StrictMode = false
+HotReload = false
+LogFilteredData = false
+
+[MCPGateway]
+Enabled = true
+FavoriteThreshold = 3
+MaxFavorites = 10
+FavoriteWindowDays = 7
+DecayDays = 30
+
+[InternalTools]
+FetchEnabled = false
+FetchMaxSizeMB = 0
+GoogleSearchEnabled = false
+GoogleAPIKey = ''
+GoogleSearchEngineID = ''
+BraveSearchEnabled = false
+BraveAPIKey = ''
+PerplexitySearchEnabled = false
+PerplexityAPIKey = ''
+ExaSearchEnabled = false
+ExaAPIKey = ''
+Context7Enabled = false
+BrowserEnabled = false
+BrowserHeadless = false
+BrowserTimeout = 0
+BrowserUserDataDir = ''
+BrowserMaxSessions = 0
+
+[Snapshots]
+Enabled = true
+MaxSnapshots = 50
+MaxFileSize = '10MB'
+ExcludePatterns = []
+AutoCleanupDays = 30
+
+[evaluator]
+enabled = true
+model = 'copilot.gpt-4.1'
+provider = 'copilot'
+alphaWeight = 0.0
+betaWeight = 0.0
+explorationC = 0.0
+minSessionsForUCB = 0
+correctionsPatterns = []
+maxTokensBaseline = 0
+maxSkills = 0
+judgePromptTemplate = ''
+async = false
+
+[cliAssist]
+Model = ''
+Timeout = 0
+
+[PersonaAutoSelect]
+Enabled = false
+PersonaPath = ''
+
+[acp]
+enabled = false
+max_sessions = 0
+idle_timeout = ''
+log_level = ''
+auto_permission = false
+
+[OpenLit]
+Enabled = false
+Endpoint = ''
+ServiceName = ''
+Insecure = false

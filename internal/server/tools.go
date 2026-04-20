@@ -166,6 +166,10 @@ func (s *Server) getToolDefinitions() []Tool {
 						"type":        "string",
 						"description": personaDesc,
 					},
+					"existing_task_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Existing failed or paused task to relaunch with updated configuration. Completed tasks cannot be updated.",
+					},
 					// ACP-specific parameters
 					"acp_mode": map[string]interface{}{
 						"type":        "string",
@@ -454,6 +458,7 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 		WorkDir          string                   `json:"work_dir"`
 		Engine           string                   `json:"engine"`
 		Model            string                   `json:"model"`
+		ExistingTaskID   string                   `json:"existing_task_id"`
 		Background       *bool                    `json:"background"`
 		Timeout          string                   `json:"timeout"`
 		Dependencies     []string                 `json:"dependencies"`
@@ -472,7 +477,7 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 		return nil, fmt.Errorf("invalid parameters: %w", err)
 	}
 
-	if req.Prompt == "" {
+	if req.Prompt == "" && req.ExistingTaskID == "" {
 		return nil, fmt.Errorf("prompt is required")
 	}
 
@@ -504,6 +509,7 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 		WorkDir:          req.WorkDir,
 		Engine:           engine,
 		Model:            req.Model,
+		ExistingTaskID:   req.ExistingTaskID,
 		Background:       background,
 		Timeout:          req.Timeout,
 		Dependencies:     req.Dependencies,
@@ -527,6 +533,9 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 		"status":     task.Status,
 		"work_dir":   task.WorkDir,
 		"created_at": task.CreatedAt,
+	}
+	if req.ExistingTaskID != "" {
+		result["replaces_task_id"] = req.ExistingTaskID
 	}
 
 	if !background && task.IsTerminal() {
